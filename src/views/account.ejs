@@ -1,0 +1,213 @@
+<%- include('layout', { title: title, body: `
+<div class="min-h-screen bg-gray-50">
+    <!-- Menu horizontal -->
+    <nav class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Message de bienvenue -->
+                <div class="flex items-center">
+                    <h1 class="text-xl font-semibold text-gray-900">
+                        Bonjour, <%= user.pseudo %>
+                    </h1>
+                </div>
+                
+                <!-- Menu paramètres -->
+                <div class="relative">
+                    <button 
+                        id="settingsButton" 
+                        class="flex items-center space-x-2 text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+                    >
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                        <span>Paramètres</span>
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                        </svg>
+                    </button>
+                    
+                    <!-- Dropdown menu -->
+                    <div 
+                        id="settingsDropdown" 
+                        class="hidden absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50 border border-gray-200"
+                    >
+                        <a 
+                            href="/account" 
+                            class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors bg-primary-50"
+                        >
+                            <div class="flex items-center">
+                                <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                                </svg>
+                                Paramètres du compte
+                            </div>
+                        </a>
+                        <form action="/auth/logout" method="POST" class="block">
+                            <button 
+                                type="submit" 
+                                class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                            >
+                                <div class="flex items-center">
+                                    <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                                    </svg>
+                                    Déconnexion
+                                </div>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+    
+    <!-- Contenu principal -->
+    <main class="max-w-4xl mx-auto py-6 sm:px-6 lg:px-8">
+        <div class="px-4 py-6 sm:px-0">
+            <% if (success) { %>
+                <div class="alert-success mb-6">
+                    <div class="flex">
+                        <svg class="h-5 w-5 text-green-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        <%= success %>
+                    </div>
+                </div>
+            <% } %>
+            
+            <% if (error) { %>
+                <div class="alert-error mb-6">
+                    <div class="flex">
+                        <svg class="h-5 w-5 text-red-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                        </svg>
+                        <%= error %>
+                    </div>
+                </div>
+            <% } %>
+            
+            <div class="space-y-6">
+                <!-- Informations du compte -->
+                <div class="card p-6">
+                    <h2 class="text-lg font-medium text-gray-900 mb-4">Informations du compte</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                            <p class="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded border"><%= user.email %></p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Pseudo</label>
+                            <p class="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded border"><%= user.pseudo %></p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Modification du pseudo -->
+                <div class="card p-6">
+                    <h2 class="text-lg font-medium text-gray-900 mb-4">Modifier le pseudo</h2>
+                    <form action="/account/update-pseudo" method="POST" class="space-y-4">
+                        <div>
+                            <label for="pseudo" class="block text-sm font-medium text-gray-700 mb-2">
+                                Nouveau pseudo
+                            </label>
+                            <input 
+                                id="pseudo" 
+                                name="pseudo" 
+                                type="text" 
+                                value="<%= user.pseudo %>"
+                                required 
+                                class="input-field"
+                                placeholder="Votre pseudo"
+                            >
+                        </div>
+                        <div>
+                            <button type="submit" class="btn-primary">
+                                Mettre à jour le pseudo
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- Changement de mot de passe -->
+                <div class="card p-6">
+                    <h2 class="text-lg font-medium text-gray-900 mb-4">Changer le mot de passe</h2>
+                    <form action="/account/change-password" method="POST" class="space-y-4">
+                        <div>
+                            <label for="currentPassword" class="block text-sm font-medium text-gray-700 mb-2">
+                                Mot de passe actuel
+                            </label>
+                            <input 
+                                id="currentPassword" 
+                                name="currentPassword" 
+                                type="password" 
+                                required 
+                                class="input-field"
+                                placeholder="••••••••"
+                            >
+                        </div>
+                        <div>
+                            <label for="newPassword" class="block text-sm font-medium text-gray-700 mb-2">
+                                Nouveau mot de passe
+                            </label>
+                            <input 
+                                id="newPassword" 
+                                name="newPassword" 
+                                type="password" 
+                                required 
+                                class="input-field"
+                                placeholder="••••••••"
+                            >
+                        </div>
+                        <div>
+                            <label for="confirmPassword" class="block text-sm font-medium text-gray-700 mb-2">
+                                Confirmer le nouveau mot de passe
+                            </label>
+                            <input 
+                                id="confirmPassword" 
+                                name="confirmPassword" 
+                                type="password" 
+                                required 
+                                class="input-field"
+                                placeholder="••••••••"
+                            >
+                        </div>
+                        <div>
+                            <button type="submit" class="btn-primary">
+                                Changer le mot de passe
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- Retour au dashboard -->
+                <div class="text-center">
+                    <a href="/dashboard" class="btn-secondary">
+                        Retour au tableau de bord
+                    </a>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+// Gestion du dropdown des paramètres
+document.addEventListener('DOMContentLoaded', function() {
+    const settingsButton = document.getElementById('settingsButton');
+    const settingsDropdown = document.getElementById('settingsDropdown');
+    
+    settingsButton.addEventListener('click', function(e) {
+        e.stopPropagation();
+        settingsDropdown.classList.toggle('hidden');
+    });
+    
+    // Fermer le dropdown en cliquant ailleurs
+    document.addEventListener('click', function(e) {
+        if (!settingsButton.contains(e.target) && !settingsDropdown.contains(e.target)) {
+            settingsDropdown.classList.add('hidden');
+        }
+    });
+});
+</script>
+` }) %>

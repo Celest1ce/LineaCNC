@@ -1,0 +1,30 @@
+{
+  "name": "lineacnc-auth",
+  "version": "1.0.0",
+  "description": "Application Node.js avec authentification pour hébergement Infomaniak",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "build-css": "tailwindcss -i ./src/styles.css -o ./public/css/styles.css --watch",
+    "build-css-prod": "tailwindcss -i ./src/styles.css -o ./public/css/styles.css --minify"
+  },
+  "keywords": ["nodejs", "express", "authentication", "mysql", "infomaniak"],
+  "author": "LineaCNC",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "mysql2": "^3.6.5",
+    "bcrypt": "^5.1.1",
+    "ejs": "^3.1.9",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "tailwindcss": "^3.3.6"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
