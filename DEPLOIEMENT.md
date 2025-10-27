@@ -90,9 +90,9 @@ Via FTP/SFTP, uploadez tous les fichiers **sauf** :
 - `.env` (à créer directement sur le serveur)
 - `.git/` (si présent)
 
-**Structure à uploader :**
+**Structure à uploader à la racine du domaine :**
 ```
-LineaCNC/
+/votre-domaine/
 ├── src/
 ├── public/
 ├── package.json
@@ -104,16 +104,16 @@ LineaCNC/
 1. Allez dans **Applications** → **Node.js**
 2. Créez une nouvelle application :
    - **Nom** : LineaCNC (ou votre choix)
-   - **Répertoire** : `/votre-domaine/lineacnc`
+   - **Répertoire** : `/votre-domaine/` (racine du domaine)
    - **Port** : Laissé vide (automatique)
    - **Script de démarrage** : `src/server.js`
    - **Version Node.js** : 18+ (recommandé)
 
 ### 3. Installation des Dépendances sur le Serveur
 1. Dans le panel Infomaniak, allez dans **Terminal**
-2. Naviguez vers votre répertoire :
+2. Naviguez vers votre répertoire racine :
    ```bash
-   cd /votre-domaine/lineacnc
+   cd /votre-domaine/
    ```
 3. Installez les dépendances :
    ```bash
