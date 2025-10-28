@@ -22,6 +22,8 @@ router.get('/login', redirectIfAuthenticated, (req, res) => {
 router.post('/login', redirectIfAuthenticated, async (req, res) => {
   const { email, password } = req.body;
 
+  console.log('🔐 Tentative de connexion:', { email, passwordLength: password?.length });
+
   try {
     // Validation des données
     if (!email || !password) {
@@ -35,6 +37,8 @@ router.post('/login', redirectIfAuthenticated, async (req, res) => {
       [email]
     );
 
+    console.log('👤 Utilisateur trouvé:', users.length > 0 ? 'Oui' : 'Non');
+
     if (users.length === 0) {
       req.session.error = 'Email ou mot de passe incorrect';
       return res.redirect('/auth/login');
@@ -44,6 +48,8 @@ router.post('/login', redirectIfAuthenticated, async (req, res) => {
 
     // Vérifier le mot de passe
     const isValidPassword = await bcrypt.compare(password, user.password);
+    console.log('🔑 Mot de passe valide:', isValidPassword);
+
     if (!isValidPassword) {
       req.session.error = 'Email ou mot de passe incorrect';
       return res.redirect('/auth/login');
@@ -56,8 +62,21 @@ router.post('/login', redirectIfAuthenticated, async (req, res) => {
       pseudo: user.pseudo
     };
 
-    req.session.success = `Bienvenue, ${user.pseudo} !`;
-    res.redirect('/dashboard');
+    console.log('✅ Session créée:', req.session.user);
+    console.log('🍪 Session ID:', req.sessionID);
+
+    // Sauvegarder la session explicitement
+    req.session.save((err) => {
+      if (err) {
+        console.error('❌ Erreur sauvegarde session:', err);
+        req.session.error = 'Erreur de session';
+        return res.redirect('/auth/login');
+      }
+      
+      console.log('💾 Session sauvegardée avec succès');
+      req.session.success = `Bienvenue, ${user.pseudo} !`;
+      res.redirect('/dashboard');
+    });
 
   } catch (error) {
     console.error('Erreur lors de la connexion:', error);
