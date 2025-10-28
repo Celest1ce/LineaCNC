@@ -16,12 +16,10 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false, // Désactivé pour HTTP (Infomaniak gère HTTPS)
+    secure: process.env.NODE_ENV === 'production', // HTTPS en production
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000, // 24 heures
-    sameSite: 'lax' // Compatible avec Infomaniak
-  },
-  name: 'lineacnc.sid' // Nom personnalisé pour éviter les conflits
+    maxAge: 24 * 60 * 60 * 1000 // 24 heures
+  }
 }));
 
 // Middleware pour parser les données
@@ -68,22 +66,10 @@ app.use((err, req, res, next) => {
 // Initialisation et démarrage du serveur
 async function startServer() {
   try {
-    // Afficher les variables d'environnement pour diagnostic
-    console.log('🔍 Variables d\'environnement:');
-    console.log(`PORT: ${process.env.PORT || 'non défini'}`);
-    console.log(`DB_HOST: ${process.env.DB_HOST || 'non défini'}`);
-    console.log(`DB_USER: ${process.env.DB_USER || 'non défini'}`);
-    console.log(`DB_PASSWORD: ${process.env.DB_PASSWORD ? '***défini***' : 'non défini'}`);
-    console.log(`DB_NAME: ${process.env.DB_NAME || 'non défini'}`);
-    console.log(`SESSION_SECRET: ${process.env.SESSION_SECRET ? '***défini***' : 'non défini'}`);
-    console.log(`NODE_ENV: ${process.env.NODE_ENV || 'non défini'}`);
-    console.log('');
-
     // Initialiser la base de données
     const dbInitialized = await initDatabase();
     if (!dbInitialized) {
       console.error('❌ Impossible de démarrer sans connexion à la base de données');
-      console.error('💡 Créez un fichier .env avec vos paramètres MySQL ou configurez les variables d\'environnement');
       process.exit(1);
     }
 

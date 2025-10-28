@@ -1,133 +1,119 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><%= title %> - LineaCNC</title>
-    <link rel="stylesheet" href="/css/styles.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-</head>
-<body class="min-h-screen bg-gray-50 font-sans">
-    <div class="min-h-screen gradient-bg flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-        <div class="max-w-md w-full space-y-8">
-            <div>
-                <div class="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-primary-100">
-                    <svg class="h-6 w-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
-                    </svg>
+<%- include('layout', { title: title, body: `
+<div class="min-h-screen gradient-bg flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-md w-full space-y-8">
+        <div>
+            <div class="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-primary-100">
+                <svg class="h-6 w-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
+                </svg>
+            </div>
+            <h2 class="mt-6 text-center text-3xl font-bold text-gray-900 text-shadow">
+                Créer un compte
+            </h2>
+            <p class="mt-2 text-center text-sm text-gray-600">
+                Rejoignez notre plateforme
+            </p>
+        </div>
+        
+        <div class="card p-8">
+            <% if (error) { %>
+                <div class="alert-error mb-6">
+                    <div class="flex">
+                        <svg class="h-5 w-5 text-red-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                        </svg>
+                        <%= error %>
+                    </div>
                 </div>
-                <h2 class="mt-6 text-center text-3xl font-bold text-gray-900 text-shadow">
-                    Créer un compte
-                </h2>
-                <p class="mt-2 text-center text-sm text-gray-600">
-                    Rejoignez notre plateforme
-                </p>
-            </div>
+            <% } %>
             
-            <div class="card p-8">
-                <% if (error) { %>
-                    <div class="alert-error mb-6">
-                        <div class="flex">
-                            <svg class="h-5 w-5 text-red-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
-                            </svg>
-                            <%= error %>
-                        </div>
+            <% if (success) { %>
+                <div class="alert-success mb-6">
+                    <div class="flex">
+                        <svg class="h-5 w-5 text-green-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        <%= success %>
                     </div>
-                <% } %>
+                </div>
+            <% } %>
+            
+            <form class="space-y-6" action="/auth/register" method="POST">
+                <div>
+                    <label for="pseudo" class="block text-sm font-medium text-gray-700 mb-2">
+                        Pseudo
+                    </label>
+                    <input 
+                        id="pseudo" 
+                        name="pseudo" 
+                        type="text" 
+                        required 
+                        class="input-field"
+                        placeholder="Votre pseudo"
+                    >
+                </div>
                 
-                <% if (success) { %>
-                    <div class="alert-success mb-6">
-                        <div class="flex">
-                            <svg class="h-5 w-5 text-green-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
-                            </svg>
-                            <%= success %>
-                        </div>
-                    </div>
-                <% } %>
+                <div>
+                    <label for="email" class="block text-sm font-medium text-gray-700 mb-2">
+                        Adresse email
+                    </label>
+                    <input 
+                        id="email" 
+                        name="email" 
+                        type="email" 
+                        autocomplete="email" 
+                        required 
+                        class="input-field"
+                        placeholder="votre@email.com"
+                    >
+                </div>
                 
-                <form class="space-y-6" action="/auth/register" method="POST">
-                    <div>
-                        <label for="pseudo" class="block text-sm font-medium text-gray-700 mb-2">
-                            Pseudo
-                        </label>
-                        <input 
-                            id="pseudo" 
-                            name="pseudo" 
-                            type="text" 
-                            required 
-                            class="input-field"
-                            placeholder="Votre pseudo"
-                        >
-                    </div>
-                    
-                    <div>
-                        <label for="email" class="block text-sm font-medium text-gray-700 mb-2">
-                            Adresse email
-                        </label>
-                        <input 
-                            id="email" 
-                            name="email" 
-                            type="email" 
-                            autocomplete="email" 
-                            required 
-                            class="input-field"
-                            placeholder="votre@email.com"
-                        >
-                    </div>
-                    
-                    <div>
-                        <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
-                            Mot de passe
-                        </label>
-                        <input 
-                            id="password" 
-                            name="password" 
-                            type="password" 
-                            autocomplete="new-password" 
-                            required 
-                            class="input-field"
-                            placeholder="••••••••"
-                        >
-                    </div>
-                    
-                    <div>
-                        <label for="confirmPassword" class="block text-sm font-medium text-gray-700 mb-2">
-                            Confirmer le mot de passe
-                        </label>
-                        <input 
-                            id="confirmPassword" 
-                            name="confirmPassword" 
-                            type="password" 
-                            autocomplete="new-password" 
-                            required 
-                            class="input-field"
-                            placeholder="••••••••"
-                        >
-                    </div>
-                    
-                    <div>
-                        <button type="submit" class="btn-primary w-full">
-                            Créer le compte
-                        </button>
-                    </div>
-                    
-                    <div class="text-center">
-                        <p class="text-sm text-gray-600">
-                            Déjà un compte ? 
-                            <a href="/auth/login" class="font-medium text-primary-600 hover:text-primary-500 transition-colors">
-                                Se connecter
-                            </a>
-                        </p>
-                    </div>
-                </form>
-            </div>
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
+                        Mot de passe
+                    </label>
+                    <input 
+                        id="password" 
+                        name="password" 
+                        type="password" 
+                        autocomplete="new-password" 
+                        required 
+                        class="input-field"
+                        placeholder="••••••••"
+                    >
+                </div>
+                
+                <div>
+                    <label for="confirmPassword" class="block text-sm font-medium text-gray-700 mb-2">
+                        Confirmer le mot de passe
+                    </label>
+                    <input 
+                        id="confirmPassword" 
+                        name="confirmPassword" 
+                        type="password" 
+                        autocomplete="new-password" 
+                        required 
+                        class="input-field"
+                        placeholder="••••••••"
+                    >
+                </div>
+                
+                <div>
+                    <button type="submit" class="btn-primary w-full">
+                        Créer le compte
+                    </button>
+                </div>
+                
+                <div class="text-center">
+                    <p class="text-sm text-gray-600">
+                        Déjà un compte ? 
+                        <a href="/auth/login" class="font-medium text-primary-600 hover:text-primary-500 transition-colors">
+                            Se connecter
+                        </a>
+                    </p>
+                </div>
+            </form>
         </div>
     </div>
-    
-    <script src="/js/main.js"></script>
-</body>
-</html>
+</div>
+` }) %>

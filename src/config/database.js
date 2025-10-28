@@ -9,7 +9,10 @@ const dbConfig = {
   database: process.env.DB_NAME || 'lineacnc_auth',
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  acquireTimeout: 60000,
+  timeout: 60000,
+  reconnect: true
 };
 
 let pool = null;
