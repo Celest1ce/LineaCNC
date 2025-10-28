@@ -68,17 +68,6 @@ app.use((err, req, res, next) => {
 // Initialisation et démarrage du serveur
 async function startServer() {
   try {
-    // Afficher les variables d'environnement pour diagnostic
-    console.log('🔍 Variables d\'environnement:');
-    console.log(`PORT: ${process.env.PORT || 'non défini'}`);
-    console.log(`DB_HOST: ${process.env.DB_HOST || 'non défini'}`);
-    console.log(`DB_USER: ${process.env.DB_USER || 'non défini'}`);
-    console.log(`DB_PASSWORD: ${process.env.DB_PASSWORD ? '***défini***' : 'non défini'}`);
-    console.log(`DB_NAME: ${process.env.DB_NAME || 'non défini'}`);
-    console.log(`SESSION_SECRET: ${process.env.SESSION_SECRET ? '***défini***' : 'non défini'}`);
-    console.log(`NODE_ENV: ${process.env.NODE_ENV || 'non défini'}`);
-    console.log('');
-
     // Initialiser la base de données
     const dbInitialized = await initDatabase();
     if (!dbInitialized) {

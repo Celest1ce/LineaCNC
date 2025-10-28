@@ -22,8 +22,6 @@ router.get('/login', redirectIfAuthenticated, (req, res) => {
 router.post('/login', redirectIfAuthenticated, async (req, res) => {
   const { email, password } = req.body;
 
-  console.log('🔐 Tentative de connexion:', { email, passwordLength: password?.length });
-
   try {
     // Validation des données
     if (!email || !password) {
@@ -62,9 +60,6 @@ router.post('/login', redirectIfAuthenticated, async (req, res) => {
       pseudo: user.pseudo
     };
 
-    console.log('✅ Session créée:', req.session.user);
-    console.log('🍪 Session ID:', req.sessionID);
-
     // Sauvegarder la session explicitement
     req.session.save((err) => {
       if (err) {
@@ -73,7 +68,6 @@ router.post('/login', redirectIfAuthenticated, async (req, res) => {
         return res.redirect('/auth/login');
       }
       
-      console.log('💾 Session sauvegardée avec succès');
       req.session.success = `Bienvenue, ${user.pseudo} !`;
       res.redirect('/dashboard');
     });
