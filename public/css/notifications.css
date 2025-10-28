@@ -1,0 +1,94 @@
+/* Styles pour les notifications responsives */
+#notification-container {
+    /* Assurer que le conteneur reste dans l'écran */
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Sur mobile, les notifications prennent toute la largeur */
+@media (max-width: 640px) {
+    #notification-container {
+        left: 1rem !important;
+        right: 1rem !important;
+        max-width: none !important;
+    }
+    
+    #notification-container .transform {
+        max-width: none !important;
+        width: 100% !important;
+    }
+}
+
+/* Sur tablette et desktop, limiter la largeur */
+@media (min-width: 641px) {
+    #notification-container {
+        max-width: 24rem; /* 384px */
+    }
+}
+
+/* Animation d'entrée améliorée */
+#notification-container .transform {
+    transform: translateX(100%);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#notification-container .transform.opacity-100 {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+/* Animation de sortie */
+#notification-container .transform.opacity-0 {
+    transform: translateX(100%);
+    opacity: 0;
+}
+
+/* Assurer que les notifications ne débordent pas */
+#notification-container .transform {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+}
+
+/* Style pour les longs messages */
+#notification-container .transform p {
+    line-height: 1.4;
+    max-height: 4.2rem; /* Limiter à 3 lignes */
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+}
+
+/* Bouton de fermeture plus accessible */
+#notification-container .transform button {
+    min-width: 2rem;
+    min-height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Effet hover sur les notifications */
+#notification-container .transform:hover {
+    transform: translateX(-2px);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* Animation de glissement pour les notifications multiples */
+#notification-container .transform:nth-child(n+2) {
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-10px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}

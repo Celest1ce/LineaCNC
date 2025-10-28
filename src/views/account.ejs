@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><%= title %> - LineaCNC</title>
+    <link rel="icon" href="/assets/images/logos/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/notifications.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -16,7 +18,10 @@
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center h-16">
                     <!-- Message de bienvenue -->
-                    <div class="flex items-center">
+                    <div class="flex items-center space-x-3">
+                        <a href="/dashboard" class="flex items-center">
+                            <img src="/assets/images/logos/logo-lineacnc.svg" alt="LineaCNC" class="h-8 hover:opacity-80 transition-opacity">
+                        </a>
                         <h1 class="text-xl font-semibold text-gray-900">
                             Bonjour, <%= user.pseudo %>
                         </h1>
@@ -76,17 +81,6 @@
         <!-- Contenu principal -->
         <main class="max-w-4xl mx-auto py-6 sm:px-6 lg:px-8">
             <div class="px-4 py-6 sm:px-0">
-                <% if (success) { %>
-                    <div class="alert-success mb-6">
-                        <div class="flex">
-                            <svg class="h-5 w-5 text-green-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
-                            </svg>
-                            <%= success %>
-                        </div>
-                    </div>
-                <% } %>
-                
                 <% if (error) { %>
                     <div class="alert-error mb-6">
                         <div class="flex">

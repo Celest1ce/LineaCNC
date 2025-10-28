@@ -1,0 +1,16 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Base de la machine -->
+  <rect x="3" y="15" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2" fill="none"/>
+  
+  <!-- Tête de fraisage -->
+  <circle cx="12" cy="8" r="3" stroke="currentColor" stroke-width="2" fill="none"/>
+  <circle cx="12" cy="8" r="1.5" fill="currentColor"/>
+  
+  <!-- Bras de la machine -->
+  <rect x="10" y="8" width="4" height="7" stroke="currentColor" stroke-width="2" fill="none"/>
+  
+  <!-- Lignes de mouvement -->
+  <path d="M5 6 L19 6" stroke="currentColor" stroke-width="1" opacity="0.5"/>
+  <path d="M5 10 L19 10" stroke="currentColor" stroke-width="1" opacity="0.5"/>
+  <path d="M5 14 L19 14" stroke="currentColor" stroke-width="1" opacity="0.5"/>
+</svg>

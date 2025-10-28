@@ -28,7 +28,23 @@ app.use(session({
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// Serveur de fichiers statiques
+// Configuration des assets
+const { getCacheHeader } = require('./config/assets');
+
+// Servir les fichiers statiques avec headers de cache
+app.use('/assets', (req, res, next) => {
+  // Déterminer le type d'asset basé sur le chemin
+  let assetType = 'images'; // par défaut
+  if (req.path.startsWith('/fonts')) assetType = 'fonts';
+  else if (req.path.startsWith('/documents')) assetType = 'documents';
+  else if (req.path.startsWith('/downloads')) assetType = 'downloads';
+  
+  // Définir le header de cache approprié
+  res.set('Cache-Control', getCacheHeader(assetType));
+  next();
+}, express.static(path.join(__dirname, '../public/assets')));
+
+// Servir les autres fichiers statiques
 app.use(express.static(path.join(__dirname, '../public')));
 
 // Configuration du moteur de template EJS
