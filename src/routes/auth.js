@@ -158,3 +158,4 @@ router.post('/register', redirectIfAuthenticated, async (req, res) => {
 });
 
 module.exports = router;
+

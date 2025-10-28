@@ -103,3 +103,4 @@ module.exports = {
   executeQuery,
   closeDatabase
 };
+

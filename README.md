@@ -1,160 +1,198 @@
-# 🚀 LineaCNC - Application Node.js avec Authentification
+# LineaCNC - Système d'Authentification et d'Administration
 
-Une application web moderne et professionnelle développée avec Node.js, Express et MySQL, optimisée pour l'hébergement mutualisé Infomaniak.
+## 🎯 Vue d'ensemble
+
+Application Node.js complète avec authentification, administration et système de logging avancé, optimisée pour l'hébergement Infomaniak.
 
 ## ✨ Fonctionnalités
 
-- **🔐 Authentification sécurisée** avec email/mot de passe
-- **👤 Gestion des utilisateurs** avec sessions persistantes
-- **🎨 Interface moderne** avec TailwindCSS et typographie Inter
-- **📱 Design responsive** adapté à tous les écrans
-- **⚙️ Paramètres du compte** (modification pseudo et mot de passe)
-- **🗄️ Base de données MySQL** avec auto-création des tables
-- **🔒 Sécurité** avec bcrypt et sessions sécurisées
+### 🔐 Authentification
+- Connexion avec email/mot de passe
+- Hachage sécurisé des mots de passe (bcrypt)
+- Gestion des sessions avec cookies
+- Protection contre les attaques par force brute
+- Verrouillage temporaire des comptes
+
+### 👥 Gestion des utilisateurs
+- Système de rôles (admin/user)
+- Statuts des comptes (actif/inactif/banni)
+- Interface d'administration complète
+- CRUD utilisateurs
+- Changement de mots de passe
+
+### 📊 Système de logging
+- Logs en base de données (architecture évolutive)
+- Types de logs : AUTH, SECURITY, SYSTEM, USER_ACTION, ERROR
+- Suivi des sessions utilisateurs
+- Logs d'accès et de sécurité
+- Interface d'administration des logs
+
+### 🎨 Interface utilisateur
+- Design moderne avec TailwindCSS
+- Typographie Inter
+- Interface responsive
+- Couleurs : bleu, gris, blanc
+- Navigation horizontale
 
 ## 🏗️ Architecture
 
 ```
 LineaCNC/
 ├── src/
-│   ├── config/          # Configuration base de données
-│   ├── middleware/      # Middlewares d'authentification
-│   ├── routes/          # Routes de l'application
-│   ├── views/           # Templates EJS
-│   └── server.js        # Point d'entrée Express
+│   ├── config/
+│   │   └── database.js          # Configuration MySQL + migrations
+│   ├── middleware/
+│   │   ├── auth.js              # Authentification
+│   │   ├── admin.js             # Autorisation admin
+│   │   └── logging.js           # Logging des requêtes
+│   ├── routes/
+│   │   ├── auth.js              # Routes d'authentification
+│   │   ├── app.js               # Routes de l'application
+│   │   └── admin.js             # Routes d'administration
+│   ├── utils/
+│   │   └── logging.js           # Système de logging
+│   ├── views/
+│   │   ├── login.ejs            # Page de connexion
+│   │   ├── register.ejs         # Page d'inscription
+│   │   ├── dashboard.ejs        # Tableau de bord
+│   │   ├── account.ejs          # Paramètres du compte
+│   │   ├── admin-users.ejs      # Administration utilisateurs
+│   │   └── admin-logs.ejs       # Administration logs
+│   └── server.js                # Serveur principal
 ├── public/
-│   ├── css/             # Styles TailwindCSS compilés
-│   └── js/              # JavaScript client
-├── agents.md            # Philosophie et règles du projet
-├── DEPLOIEMENT.md       # Guide de déploiement Infomaniak
-└── package.json         # Configuration npm
+│   ├── css/
+│   │   └── styles.css           # Styles TailwindCSS
+│   └── js/
+│       └── main.js              # JavaScript client
+├── package.json                 # Dépendances Node.js
+├── tailwind.config.js          # Configuration TailwindCSS
+├── .gitignore                  # Fichiers à ignorer
+└── deploy.sh                   # Script de déploiement
 ```
 
-## 🚀 Installation et Démarrage
+## 🚀 Installation et déploiement
 
 ### Prérequis
 - Node.js 18+
-- MySQL (local ou hébergement Infomaniak)
-- npm ou yarn
+- MySQL 5.7+
+- Compte Infomaniak avec hébergement Node.js
 
 ### Installation locale
 ```bash
 # Cloner le projet
-git clone <votre-repo>
+git clone <repository-url>
 cd LineaCNC
 
 # Installer les dépendances
 npm install
 
-# Compiler les styles TailwindCSS
-npm run build-css-prod
-
 # Configurer l'environnement
 cp .env.example .env
 # Éditer .env avec vos paramètres MySQL
 
-# Démarrer en mode développement
-npm run dev
+# Compiler les styles
+npm run build-css-prod
 
-# Ou démarrer en production
+# Démarrer le serveur
 npm start
 ```
 
-### Configuration de la base de données
-1. Créer une base MySQL nommée `lineacnc_auth`
-2. Configurer les paramètres dans `.env`
-3. La table `users` sera créée automatiquement au premier démarrage
+### Déploiement Infomaniak
+```bash
+# Exécuter le script de déploiement
+./deploy.sh
 
-## 🌐 Déploiement sur Infomaniak
+# Uploadez tous les fichiers via FTP
+# Créez un fichier .env avec vos paramètres Infomaniak
+# Redémarrez l'application Node.js
+```
 
-Consultez le guide complet dans [DEPLOIEMENT.md](./DEPLOIEMENT.md) pour :
-- Configuration de la base MySQL
-- Upload des fichiers
-- Configuration de l'application Node.js
-- Tests et vérifications
+## 🔧 Configuration
 
-## 🔐 Compte de Test
+### Variables d'environnement (.env)
+```env
+# Base de données MySQL
+DB_HOST=mysql-xxx.infomaniak.com
+DB_USER=your_username
+DB_PASSWORD=your_password
+DB_NAME=your_database
 
-Un compte administrateur est créé automatiquement :
-- **Email** : `admin@lineacnc.com`
-- **Mot de passe** : `admin123`
+# Sessions
+SESSION_SECRET=your-super-secret-key
 
-## 📚 Documentation
+# Serveur
+PORT=process.env.PORT  # Défini automatiquement par Infomaniak
+NODE_ENV=production
+```
 
-- **[agents.md](./agents.md)** : Philosophie, architecture et bonnes pratiques
-- **[DEPLOIEMENT.md](./DEPLOIEMENT.md)** : Guide complet de déploiement
-- **[README.md](./README.md)** : Ce fichier
+### Base de données
+Le système crée automatiquement les tables :
+- `users` : Utilisateurs avec rôles et statuts
+- `logs` : Système de logging évolutif
+- `user_sessions` : Suivi des sessions
 
-## 🛠️ Technologies Utilisées
+## 👤 Comptes par défaut
 
-- **Backend** : Node.js, Express.js
-- **Base de données** : MySQL avec mysql2
-- **Authentification** : express-session, bcrypt
-- **Frontend** : EJS, TailwindCSS
-- **Typographie** : Inter (Google Fonts)
-- **Développement** : nodemon, dotenv
+### Administrateur
+- **Email** : admin@lineacnc.com
+- **Mot de passe** : admin123
+- **Rôle** : admin
+- **Statut** : actif
 
-## 🎨 Design System
+## 📱 Utilisation
 
-- **Palette** : Bleus clairs, gris, blanc
-- **Typographie** : Inter (300-700)
-- **Composants** : Boutons, formulaires, cartes, alertes
-- **Responsive** : Mobile-first design
+### Connexion
+1. Accédez à `/auth/login`
+2. Connectez-vous avec vos identifiants
+3. Redirection vers le dashboard
+
+### Administration (admin uniquement)
+- `/admin/users` : Gestion des utilisateurs
+- `/admin/logs` : Consultation des logs
+
+### Paramètres du compte
+- `/account` : Modification du pseudo et mot de passe
 
 ## 🔒 Sécurité
 
-- Mots de passe hashés avec bcrypt (10 rounds)
+### Mesures implémentées
+- Hachage bcrypt des mots de passe
 - Sessions sécurisées avec cookies HttpOnly
-- Validation côté client et serveur
-- Protection contre les injections SQL
-- Gestion propre des erreurs
+- Protection CSRF avec SameSite
+- Limitation des tentatives de connexion
+- Logging de toutes les actions sensibles
+- Validation des entrées utilisateur
 
-## 📋 Scripts Disponibles
+### Logs de sécurité
+- Tentatives de connexion échouées
+- Accès non autorisés à l'admin
+- Changements de mots de passe
+- Modifications des comptes utilisateurs
 
-```bash
-npm start          # Démarrage production
-npm run dev        # Démarrage développement avec nodemon
-npm run build-css  # Compilation TailwindCSS (watch)
-npm run build-css-prod  # Compilation TailwindCSS (production)
-```
+## 🛠️ Maintenance
 
-## 🌟 Fonctionnalités Principales
+### Logs
+- Consultation via `/admin/logs`
+- Filtrage par type et niveau
+- Export possible via API
 
-### Page de Connexion
-- Formulaire email/mot de passe
-- Design moderne avec dégradé bleu
-- Messages d'erreur/succès élégants
-- Lien vers création de compte
-
-### Dashboard Principal
-- Menu horizontal plein écran
-- Message de bienvenue personnalisé
-- Dropdown paramètres avec options
-- Zone de contenu extensible
-
-### Paramètres du Compte
-- Modification du pseudo
-- Changement de mot de passe
-- Validation et feedback utilisateur
-- Interface cohérente avec le dashboard
-
-## 🔧 Maintenance
-
-- Mise à jour des dépendances : `npm update`
-- Compilation des styles : `npm run build-css-prod`
-- Sauvegarde de la base de données via phpMyAdmin
-- Monitoring des logs d'erreur
+### Base de données
+- Migrations automatiques
+- Sauvegarde recommandée
+- Nettoyage périodique des anciens logs
 
 ## 📞 Support
 
 Pour toute question ou problème :
-1. Consultez la documentation dans `agents.md` et `DEPLOIEMENT.md`
-2. Vérifiez les logs d'erreur
-3. Testez localement avant déploiement
-4. Contactez le support Infomaniak si nécessaire
+1. Consultez les logs via `/admin/logs`
+2. Vérifiez la configuration `.env`
+3. Testez la connexion MySQL
+4. Redémarrez l'application
+
+## 📄 Licence
+
+MIT License - Voir le fichier LICENSE pour plus de détails.
 
 ---
 
-**🎯 Objectif** : Créer une application professionnelle, maintenable et évolutive, optimisée pour l'hébergement mutualisé Infomaniak.
-
-**Mantra** : *"Simple, propre, fonctionnel"*
+**LineaCNC** - Système d'authentification professionnel pour Infomaniak
