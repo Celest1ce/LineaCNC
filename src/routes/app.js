@@ -16,7 +16,7 @@ router.get('/', (req, res) => {
 
 // Dashboard principal
 router.get('/dashboard', requireAuth, (req, res) => {
-  res.render('dashboard', {
+  res.render('dashboard/index', {
     title: 'Tableau de bord',
     user: req.session.user,
     success: req.session.success || null,
@@ -30,7 +30,7 @@ router.get('/dashboard', requireAuth, (req, res) => {
 
 // Page des paramètres du compte
 router.get('/account', requireAuth, (req, res) => {
-  res.render('account', {
+  res.render('account/index', {
     title: 'Paramètres du compte',
     user: req.session.user,
     success: req.session.success || null,

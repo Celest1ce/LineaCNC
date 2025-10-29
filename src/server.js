@@ -28,21 +28,16 @@ app.use(session({
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// Configuration des assets
-const { getCacheHeader } = require('./config/assets');
-
 // Servir les fichiers statiques avec headers de cache
 app.use('/assets', (req, res, next) => {
-  // Déterminer le type d'asset basé sur le chemin
-  let assetType = 'images'; // par défaut
-  if (req.path.startsWith('/fonts')) assetType = 'fonts';
-  else if (req.path.startsWith('/documents')) assetType = 'documents';
-  else if (req.path.startsWith('/downloads')) assetType = 'downloads';
-  
-  // Définir le header de cache approprié
-  res.set('Cache-Control', getCacheHeader(assetType));
+  // Headers de cache pour les assets statiques
+  res.set('Cache-Control', 'public, max-age=31536000'); // 1 an
   next();
 }, express.static(path.join(__dirname, '../public/assets')));
+
+// Servir les CSS et JS depuis l'ancien chemin pour compatibilité
+app.use('/css', express.static(path.join(__dirname, '../public/assets/css')));
+app.use('/js', express.static(path.join(__dirname, '../public/assets/js')));
 
 // Servir les autres fichiers statiques
 app.use(express.static(path.join(__dirname, '../public')));
@@ -64,7 +59,7 @@ app.use('/', appRoutes);
 
 // Route 404
 app.use((req, res) => {
-  res.status(404).render('404', { 
+  res.status(404).render('errors/404', { 
     title: 'Page non trouvée',
     message: 'La page que vous recherchez n\'existe pas.'
   });
@@ -73,7 +68,7 @@ app.use((req, res) => {
 // Gestion des erreurs
 app.use((err, req, res, next) => {
   console.error('Erreur serveur:', err);
-  res.status(500).render('error', {
+  res.status(500).render('errors/500', {
     title: 'Erreur serveur',
     message: process.env.NODE_ENV === 'production' 
       ? 'Une erreur interne s\'est produite.' 

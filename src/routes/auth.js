@@ -7,7 +7,7 @@ const router = express.Router();
 
 // Page de connexion
 router.get('/login', redirectIfAuthenticated, (req, res) => {
-  res.render('login', {
+  res.render('auth/login', {
     title: 'Connexion',
     error: req.session.error || null,
     success: req.session.success || null
@@ -91,7 +91,7 @@ router.post('/logout', (req, res) => {
 
 // Route pour créer un compte (optionnel, pour les administrateurs)
 router.get('/register', redirectIfAuthenticated, (req, res) => {
-  res.render('register', {
+  res.render('auth/register', {
     title: 'Créer un compte',
     error: req.session.error || null,
     success: req.session.success || null
