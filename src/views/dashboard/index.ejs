@@ -4,123 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><%= title %> - LineaCNC</title>
-    <link rel="icon" href="/assets/images/branding/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/css/styles.css">
-    <link rel="stylesheet" href="/assets/css/notifications.css">
+    <link rel="icon" href="/assets/images/logos/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/notifications.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="min-h-screen bg-gray-50 dark:bg-gray-900 font-sans transition-colors duration-200">
     <div class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
-        <!-- Menu horizontal -->
-        <nav class="bg-white dark:bg-gray-900 shadow-sm border-b border-gray-200 dark:border-gray-800 transition-colors duration-200">
-            <div class="px-4 sm:px-6 lg:px-8">
-                <div class="flex justify-between items-center h-16">
-                    <!-- Message de bienvenue -->
-                        <div class="flex items-center space-x-3">
-                            <a href="/dashboard" class="flex items-center">
-                                <img src="/assets/images/branding/logo-lineacnc.svg" alt="LineaCNC" class="h-8 hover:opacity-80 transition-opacity">
-                            </a>
-                            <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100">
-                                Bonjour, <%= user.pseudo %>
-                            </h1>
-                        </div>
-                    
-                    <!-- Menu paramètres -->
-                    <div class="relative">
-                        <button 
-                            id="settingsButton" 
-                            class="flex items-center space-x-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 px-3 py-2 rounded-md text-sm font-medium transition-colors"
-                        >
-                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                            </svg>
-                            <span>Paramètres</span>
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                            </svg>
-                        </button>
-                        
-                        <!-- Dropdown menu -->
-                        <div 
-                            id="settingsDropdown" 
-                            class="hidden absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg py-1 z-50 border border-gray-200 dark:border-gray-800 transition-colors duration-200"
-                        >
-                            <a 
-                                href="/account" 
-                                class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                            >
-                                <div class="flex items-center">
-                                    <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                                    </svg>
-                                    Paramètres du compte
-                                </div>
-                            </a>
-                            
-                            <!-- Séparateur -->
-                            <div class="border-t border-gray-200 dark:border-gray-800 my-1"></div>
-                            
-                            <!-- Sélecteur de thème -->
-                            <div class="px-2 py-1">
-                                <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 px-2">Thème</div>
-                                <div class="flex items-center justify-between gap-1">
-                                    <button 
-                                        data-theme="light"
-                                        class="theme-btn flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
-                                        title="Mode clair"
-                                    >
-                                        <svg class="h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-yellow-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
-                                        </svg>
-                                        <span class="text-xs text-gray-600 dark:text-gray-400">Clair</span>
-                                    </button>
-                                    <button 
-                                        data-theme="dark"
-                                        class="theme-btn flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
-                                        title="Mode sombre"
-                                    >
-                                        <svg class="h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
-                                        </svg>
-                                        <span class="text-xs text-gray-600 dark:text-gray-400">Sombre</span>
-                                    </button>
-                                    <button 
-                                        data-theme="auto"
-                                        class="theme-btn flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
-                                        title="Automatique"
-                                    >
-                                        <svg class="h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-purple-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
-                                        </svg>
-                                        <span class="text-xs text-gray-600 dark:text-gray-400">Auto</span>
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <!-- Séparateur -->
-                            <div class="border-t border-gray-200 dark:border-gray-800 my-1"></div>
-                            
-                            <form action="/auth/logout" method="POST" class="block">
-                                <button 
-                                    type="submit" 
-                                    class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                                >
-                                    <div class="flex items-center">
-                                        <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
-                                        </svg>
-                                        Déconnexion
-                                    </div>
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </nav>
+        <%- include('components/navbar', { user: user }) %>
         
         <!-- Contenu principal -->
         <main class="w-full py-6 px-4 sm:px-6 lg:px-8">
@@ -205,16 +98,76 @@
                     
                     <div class="mb-4">
                         <label for="machineBaudRate" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Vitesse de transmission</label>
-                        <select id="machineBaudRate" class="input-field">
-                            <option value="9600">9600 baud</option>
-                            <option value="19200">19200 baud</option>
-                            <option value="38400">38400 baud</option>
-                            <option value="57600">57600 baud</option>
-                            <option value="115200" selected>115200 baud</option>
-                            <option value="230400">230400 baud</option>
-                            <option value="460800">460800 baud</option>
-                            <option value="921600">921600 baud</option>
-                        </select>
+                        <div class="relative">
+                            <input 
+                                type="number" 
+                                id="machineBaudRate" 
+                                placeholder="Saisir ou sélectionner un baudrate" 
+                                min="1200" 
+                                max="20000000" 
+                                step="1200"
+                                value="115200"
+                                class="w-full px-3 py-2 pr-10 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:text-white"
+                            >
+                            <button 
+                                type="button" 
+                                id="baudrateDropdownBtn" 
+                                class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                            >
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            
+                            <!-- Menu déroulant -->
+                            <div id="baudrateDropdown" class="hidden absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                                <!-- Section Standard -->
+                                <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                                    <p class="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Standard</p>
+                                </div>
+                                <div class="py-1">
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="9600">9600 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="19200">19200 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="38400">38400 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="57600">57600 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300" data-baudrate="115200">115200 baud (Recommandé)</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="230400">230400 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="460800">460800 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="921600">921600 baud</button>
+                                </div>
+                                
+                                <!-- Section CNC/3D -->
+                                <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                                    <p class="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">CNC & Imprimantes 3D</p>
+                                </div>
+                                <div class="py-1">
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="250000">250000 baud (Marlin)</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="500000">500000 baud (Klipper)</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="1000000">1000000 baud (Klipper)</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="2000000">2000000 baud (Klipper)</button>
+                                </div>
+                                
+                                <!-- Section Haute Performance -->
+                                <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                                    <p class="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Haute Performance</p>
+                                </div>
+                                <div class="py-1">
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="4000000">4000000 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="8000000">8000000 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="12000000">12000000 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="20000000">20000000 baud</button>
+                                </div>
+                                
+                                <!-- Section Personnalisé -->
+                                <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700">
+                                    <p class="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Personnalisé</p>
+                                </div>
+                                <div class="p-3 border-t border-gray-200 dark:border-gray-600">
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Saisissez librement dans le champ ci-dessus</p>
+                                    <p class="text-xs text-gray-400 dark:text-gray-500">Valeurs acceptées : 1200 - 20000000</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="flex justify-end space-x-3">
@@ -278,13 +231,58 @@
     </div>
 
     <!-- Scripts séparés pour une meilleure organisation -->
-    <script src="/assets/js/config.js"></script>
-    <script src="/assets/js/utils/notification.js"></script>
-    <script src="/assets/js/utils/theme-manager.js"></script>
-    <script src="/assets/js/components/dropdown-manager.js"></script>
-    <script src="/assets/js/components/machine-manager.js"></script>
-    <script src="/assets/js/pages/dashboard.js"></script>
+    <script src="/js/config.js"></script>
+    <script src="/js/utils/notification.js"></script>
+    <script src="/js/utils/theme-manager.js"></script>
+    <script src="/js/components/dropdown-manager.js"></script>
+    <script src="/js/components/machine-manager.js"></script>
+    <script src="/js/pages/dashboard.js"></script>
     
-    <script src="/assets/js/main.js"></script>
+    <script src="/js/main.js"></script>
+    
+    <style>
+        /* Styles pour le dropdown de baudrate */
+        .baudrate-option {
+            transition: all 0.15s ease;
+        }
+        
+        .baudrate-option:hover {
+            background-color: #f3f4f6;
+        }
+        
+        .dark .baudrate-option:hover {
+            background-color: #374151;
+        }
+        
+        .baudrate-option:active {
+            background-color: #e5e7eb;
+        }
+        
+        .dark .baudrate-option:active {
+            background-color: #4b5563;
+        }
+        
+        /* Animation du dropdown */
+        #baudrateDropdown {
+            transition: all 0.2s ease;
+        }
+        
+        #baudrateDropdown.show {
+            display: block !important;
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        #baudrateDropdown.hidden {
+            display: none !important;
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        
+        /* Style pour l'option recommandée */
+        .baudrate-option[data-baudrate="115200"] {
+            font-weight: 500;
+        }
+    </style>
 </body>
 </html>

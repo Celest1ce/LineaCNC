@@ -37,9 +37,7 @@ async function errorLogger(err, req, res, next) {
 // Middleware pour logger les événements de sécurité (peut être étendu)
 async function securityLogger(req, res, next) {
   // Exemple: Détecter des patterns suspects dans les requêtes
-  if (req.originalUrl.includes('/admin') && (!req.session || !req.session.user || req.session.user.role !== 'admin')) {
-    await logSecurity('unauthorized_admin_access_attempt', `Tentative d'accès non autorisé à l'admin: ${req.originalUrl}`, req);
-  }
+  // (Logique de sécurité peut être étendue ici)
   next();
 }
 

@@ -140,21 +140,21 @@ router.post('/api/machines', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'UUID et nom requis' });
     }
 
-    // Vérifier si la machine existe déjà
+    // Vérifier si la machine existe déjà POUR CET UTILISATEUR
     const existing = await executeQuery(
-      'SELECT id FROM machines WHERE uuid = ?',
-      [uuid]
+      'SELECT id FROM machines WHERE uuid = ? AND user_id = ?',
+      [uuid, userId]
     );
 
     if (existing.length > 0) {
-      // Mettre à jour
+      // Mettre à jour la machine de cet utilisateur
       await executeQuery(
-        'UPDATE machines SET name = ?, baud_rate = ?, last_port = ?, updated_at = NOW() WHERE uuid = ?',
-        [name, baudRate || 115200, port, uuid]
+        'UPDATE machines SET name = ?, baud_rate = ?, last_port = ?, updated_at = NOW() WHERE uuid = ? AND user_id = ?',
+        [name, baudRate || 115200, port, uuid, userId]
       );
       return res.json({ success: true, message: 'Machine mise à jour' });
     } else {
-      // Créer
+      // Créer une nouvelle machine pour cet utilisateur
       await executeQuery(
         'INSERT INTO machines (user_id, uuid, name, baud_rate, last_port) VALUES (?, ?, ?, ?, ?)',
         [userId, uuid, name, baudRate || 115200, port]
