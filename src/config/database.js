@@ -53,17 +53,17 @@ async function createUsersTable(connection) {
     await connection.execute(createTableQuery);
     console.log('✅ Table users créée/vérifiée');
     
-    // Vérifier s'il y a des utilisateurs, sinon créer un utilisateur admin par défaut
+    // Vérifier s'il y a des utilisateurs, sinon créer un utilisateur test par défaut
     const [rows] = await connection.execute('SELECT COUNT(*) as count FROM users');
     if (rows[0].count === 0) {
       const bcrypt = require('bcrypt');
-      const hashedPassword = await bcrypt.hash('admin123', 10);
+      const hashedPassword = await bcrypt.hash('test123', 10);
       
       await connection.execute(
         'INSERT INTO users (email, password, pseudo) VALUES (?, ?, ?)',
-        ['admin@lineacnc.com', hashedPassword, 'Administrateur']
+        ['test@lineacnc.com', hashedPassword, 'Utilisateur Test']
       );
-      console.log('✅ Utilisateur admin créé (email: admin@lineacnc.com, mot de passe: admin123)');
+      console.log('✅ Utilisateur test créé (email: test@lineacnc.com, mot de passe: test123)');
     }
   } catch (error) {
     console.error('❌ Erreur lors de la création de la table users:', error.message);
@@ -78,18 +78,22 @@ async function createMachinesTable(connection) {
       CREATE TABLE IF NOT EXISTS machines (
         id INT AUTO_INCREMENT PRIMARY KEY,
         user_id INT NOT NULL,
-        uuid VARCHAR(36) UNIQUE NOT NULL,
+        uuid VARCHAR(36) NOT NULL,
         name VARCHAR(100) NOT NULL,
         baud_rate INT DEFAULT 115200,
         last_port VARCHAR(100),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_user_machine (user_id, uuid)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `;
     
     await connection.execute(createTableQuery);
     console.log('✅ Table machines créée/vérifiée');
+    console.log('ℹ️  Note: Si vous migrez depuis une ancienne version, exécutez:');
+    console.log('   node src/config/migrations/migrate-uuid-constraint.js');
+    
   } catch (error) {
     console.error('❌ Erreur lors de la création de la table machines:', error.message);
     throw error;

@@ -7,15 +7,18 @@ const router = express.Router();
 
 // Page de connexion
 router.get('/login', redirectIfAuthenticated, (req, res) => {
-  res.render('login', {
-    title: 'Connexion',
-    error: req.session.error || null,
-    success: req.session.success || null
-  });
+  const error = req.session.error || null;
+  const success = req.session.success || null;
   
-  // Nettoyer les messages après affichage
+  // Nettoyer les messages avant l'affichage
   delete req.session.error;
   delete req.session.success;
+  
+  res.render('login', {
+    title: 'Connexion',
+    error: error,
+    success: success
+  });
 });
 
 // Traitement de la connexion
@@ -89,16 +92,20 @@ router.post('/logout', (req, res) => {
   });
 });
 
-// Route pour créer un compte (optionnel, pour les administrateurs)
+// Route pour créer un compte (optionnel)
 router.get('/register', redirectIfAuthenticated, (req, res) => {
-  res.render('register', {
-    title: 'Créer un compte',
-    error: req.session.error || null,
-    success: req.session.success || null
-  });
+  const error = req.session.error || null;
+  const success = req.session.success || null;
   
+  // Nettoyer les messages avant l'affichage
   delete req.session.error;
   delete req.session.success;
+  
+  res.render('register', {
+    title: 'Créer un compte',
+    error: error,
+    success: success
+  });
 });
 
 router.post('/register', redirectIfAuthenticated, async (req, res) => {

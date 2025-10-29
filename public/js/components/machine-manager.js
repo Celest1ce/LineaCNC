@@ -10,6 +10,8 @@ class MachineManager {
         this.readers = new Map(); // Pour stocker les readers Web Serial
         this.connectionMonitors = new Map(); // Pour stocker les monitors de connexion
         this.heartbeatIntervals = new Map(); // Pour stocker les intervalles de heartbeat
+        this.commandHistory = []; // Historique des commandes
+        this.historyIndex = -1; // Index actuel dans l'historique
         this.init();
     }
 
@@ -58,21 +60,30 @@ class MachineManager {
             closeConsoleModal.addEventListener('click', () => this.hideConsoleModal());
         }
         if (consoleModal) {
+            // Ne pas fermer la console en cliquant à l'extérieur
+            // La console doit rester ouverte pour permettre la communication continue
             consoleModal.addEventListener('click', (e) => {
-                if (e.target === consoleModal) {
-                    this.hideConsoleModal();
-                }
+                // Ne rien faire - empêcher la fermeture accidentelle
             });
         }
         if (sendConsoleBtn) {
             sendConsoleBtn.addEventListener('click', () => this.sendConsoleCommand());
         }
         if (consoleInput) {
-            // Ctrl+Enter pour envoyer
+            // Gestion des touches clavier
             consoleInput.addEventListener('keydown', (e) => {
                 if (e.ctrlKey && e.key === 'Enter') {
+                    // Ctrl+Enter pour envoyer
                     e.preventDefault();
                     this.sendConsoleCommand();
+                } else if (e.key === 'ArrowUp') {
+                    // Flèche haut - commande précédente
+                    e.preventDefault();
+                    this.navigateHistory('up');
+                } else if (e.key === 'ArrowDown') {
+                    // Flèche bas - commande suivante
+                    e.preventDefault();
+                    this.navigateHistory('down');
                 }
             });
         }
@@ -240,6 +251,9 @@ class MachineManager {
         // Vider la console
         consoleOutput.innerHTML = '<div class="text-gray-500 dark:text-gray-400">Console ouverte. En attente de données...</div>';
 
+        // Réinitialiser l'historique pour cette nouvelle session
+        this.historyIndex = -1;
+
         modal.classList.remove('hidden');
         consoleInput.focus();
 
@@ -298,6 +312,9 @@ class MachineManager {
         }
 
         try {
+            // Ajouter la commande à l'historique
+            this.addToHistory(command);
+            
             // Ajouter la commande à la console
             this.appendToConsole(`> ${command}`, 'text-blue-400');
             
@@ -307,12 +324,48 @@ class MachineManager {
             await writer.write(encoder.encode(command + '\n'));
             writer.releaseLock();
 
-            // Vider le champ de saisie
+            // Vider le champ de saisie et réinitialiser l'index
             consoleInput.value = '';
+            this.historyIndex = -1;
         } catch (error) {
             console.error('Erreur lors de l\'envoi:', error);
             this.appendToConsole(`[Erreur] ${error.message}`, 'text-red-400');
             notificationManager.show('Erreur lors de l\'envoi de la commande', 'error');
+        }
+    }
+
+    addToHistory(command) {
+        // Éviter les doublons consécutifs
+        if (this.commandHistory.length === 0 || this.commandHistory[this.commandHistory.length - 1] !== command) {
+            this.commandHistory.push(command);
+        }
+        
+        // Limiter l'historique à 100 commandes
+        if (this.commandHistory.length > 100) {
+            this.commandHistory.shift();
+        }
+    }
+
+    navigateHistory(direction) {
+        if (this.commandHistory.length === 0) return;
+
+        const consoleInput = document.getElementById('consoleInput');
+        
+        if (direction === 'up') {
+            // Flèche haut - commande précédente
+            if (this.historyIndex < this.commandHistory.length - 1) {
+                this.historyIndex++;
+                consoleInput.value = this.commandHistory[this.commandHistory.length - 1 - this.historyIndex];
+            }
+        } else if (direction === 'down') {
+            // Flèche bas - commande suivante
+            if (this.historyIndex > 0) {
+                this.historyIndex--;
+                consoleInput.value = this.commandHistory[this.commandHistory.length - 1 - this.historyIndex];
+            } else if (this.historyIndex === 0) {
+                this.historyIndex = -1;
+                consoleInput.value = '';
+            }
         }
     }
 
@@ -1725,7 +1778,7 @@ class MachineManager {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                         </svg>
                     </button>
-                    ${machine.isConnected || machine.status === 'ready' ? `
+                    ${machine.status === 'ready' ? `
                     <button 
                         onclick="machineManager.showConsoleModal('${machine.id}')"
                         class="p-1 text-gray-500 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
@@ -1764,7 +1817,7 @@ class MachineManager {
                 ` : ''}
             </div>
 
-            ${machine.status === 'connected' || machine.status === 'ready' ? `
+            ${machine.status === 'ready' ? `
                 <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-800">
                     <div class="flex space-x-2">
                         <button 
