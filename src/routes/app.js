@@ -130,5 +130,75 @@ router.post('/account/change-password', requireAuth, async (req, res) => {
   }
 });
 
+// API - Sauvegarder une machine
+router.post('/api/machines', requireAuth, async (req, res) => {
+  try {
+    const { uuid, name, baudRate, port } = req.body;
+    const userId = req.session.user.id;
+
+    if (!uuid || !name) {
+      return res.status(400).json({ error: 'UUID et nom requis' });
+    }
+
+    // Vérifier si la machine existe déjà
+    const existing = await executeQuery(
+      'SELECT id FROM machines WHERE uuid = ?',
+      [uuid]
+    );
+
+    if (existing.length > 0) {
+      // Mettre à jour
+      await executeQuery(
+        'UPDATE machines SET name = ?, baud_rate = ?, last_port = ?, updated_at = NOW() WHERE uuid = ?',
+        [name, baudRate || 115200, port, uuid]
+      );
+      return res.json({ success: true, message: 'Machine mise à jour' });
+    } else {
+      // Créer
+      await executeQuery(
+        'INSERT INTO machines (user_id, uuid, name, baud_rate, last_port) VALUES (?, ?, ?, ?, ?)',
+        [userId, uuid, name, baudRate || 115200, port]
+      );
+      return res.json({ success: true, message: 'Machine enregistrée' });
+    }
+  } catch (error) {
+    console.error('Erreur sauvegarde machine:', error);
+    res.status(500).json({ error: 'Erreur lors de la sauvegarde' });
+  }
+});
+
+// API - Récupérer les machines de l'utilisateur
+router.get('/api/machines', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.user.id;
+    const machines = await executeQuery(
+      'SELECT id, uuid, name, baud_rate, last_port, created_at, updated_at FROM machines WHERE user_id = ?',
+      [userId]
+    );
+    res.json(machines);
+  } catch (error) {
+    console.error('Erreur récupération machines:', error);
+    res.status(500).json({ error: 'Erreur lors de la récupération' });
+  }
+});
+
+// API - Supprimer une machine
+router.delete('/api/machines/:uuid', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.user.id;
+    const { uuid } = req.params;
+
+    await executeQuery(
+      'DELETE FROM machines WHERE uuid = ? AND user_id = ?',
+      [uuid, userId]
+    );
+
+    res.json({ success: true, message: 'Machine supprimée' });
+  } catch (error) {
+    console.error('Erreur suppression machine:', error);
+    res.status(500).json({ error: 'Erreur lors de la suppression' });
+  }
+});
+
 module.exports = router;
 

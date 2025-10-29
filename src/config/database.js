@@ -24,8 +24,9 @@ async function initDatabase() {
     const connection = await pool.getConnection();
     console.log('✅ Connexion à la base de données MySQL établie');
     
-    // Créer la table users si elle n'existe pas
+    // Créer les tables si elles n'existent pas
     await createUsersTable(connection);
+    await createMachinesTable(connection);
     
     connection.release();
     return true;
@@ -66,6 +67,31 @@ async function createUsersTable(connection) {
     }
   } catch (error) {
     console.error('❌ Erreur lors de la création de la table users:', error.message);
+    throw error;
+  }
+}
+
+// Création automatique de la table machines
+async function createMachinesTable(connection) {
+  try {
+    const createTableQuery = `
+      CREATE TABLE IF NOT EXISTS machines (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        uuid VARCHAR(36) UNIQUE NOT NULL,
+        name VARCHAR(100) NOT NULL,
+        baud_rate INT DEFAULT 115200,
+        last_port VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `;
+    
+    await connection.execute(createTableQuery);
+    console.log('✅ Table machines créée/vérifiée');
+  } catch (error) {
+    console.error('❌ Erreur lors de la création de la table machines:', error.message);
     throw error;
   }
 }

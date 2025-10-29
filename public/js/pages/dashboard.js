@@ -28,6 +28,8 @@ class DashboardPage {
         
         if (machinesGrid || addMachineBtn) {
             this.machineManager = new MachineManager();
+            // Exposer globalement pour les attributs onclick dans le HTML
+            window.machineManager = this.machineManager;
         }
     }
 
@@ -50,8 +52,12 @@ class DashboardPage {
             // Échap : Fermer les modals
             if (e.key === 'Escape') {
                 const modal = document.getElementById('machineModal');
+                const consoleModal = document.getElementById('consoleModal');
+                
                 if (modal && !modal.classList.contains('hidden')) {
                     this.machineManager?.hideModal();
+                } else if (consoleModal && !consoleModal.classList.contains('hidden')) {
+                    this.machineManager?.hideConsoleModal();
                 }
             }
         });
