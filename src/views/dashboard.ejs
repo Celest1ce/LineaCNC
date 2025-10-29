@@ -205,16 +205,76 @@
                     
                     <div class="mb-4">
                         <label for="machineBaudRate" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Vitesse de transmission</label>
-                        <select id="machineBaudRate" class="input-field">
-                            <option value="9600">9600 baud</option>
-                            <option value="19200">19200 baud</option>
-                            <option value="38400">38400 baud</option>
-                            <option value="57600">57600 baud</option>
-                            <option value="115200" selected>115200 baud</option>
-                            <option value="230400">230400 baud</option>
-                            <option value="460800">460800 baud</option>
-                            <option value="921600">921600 baud</option>
-                        </select>
+                        <div class="relative">
+                            <input 
+                                type="number" 
+                                id="machineBaudRate" 
+                                placeholder="Saisir ou sélectionner un baudrate" 
+                                min="1200" 
+                                max="20000000" 
+                                step="1200"
+                                value="115200"
+                                class="w-full px-3 py-2 pr-10 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:text-white"
+                            >
+                            <button 
+                                type="button" 
+                                id="baudrateDropdownBtn" 
+                                class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                            >
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            
+                            <!-- Menu déroulant -->
+                            <div id="baudrateDropdown" class="hidden absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                                <!-- Section Standard -->
+                                <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                                    <p class="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Standard</p>
+                                </div>
+                                <div class="py-1">
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="9600">9600 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="19200">19200 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="38400">38400 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="57600">57600 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300" data-baudrate="115200">115200 baud (Recommandé)</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="230400">230400 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="460800">460800 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="921600">921600 baud</button>
+                                </div>
+                                
+                                <!-- Section CNC/3D -->
+                                <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                                    <p class="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">CNC & Imprimantes 3D</p>
+                                </div>
+                                <div class="py-1">
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="250000">250000 baud (Marlin)</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="500000">500000 baud (Klipper)</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="1000000">1000000 baud (Klipper)</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="2000000">2000000 baud (Klipper)</button>
+                                </div>
+                                
+                                <!-- Section Haute Performance -->
+                                <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                                    <p class="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Haute Performance</p>
+                                </div>
+                                <div class="py-1">
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="4000000">4000000 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="8000000">8000000 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="12000000">12000000 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="20000000">20000000 baud</button>
+                                </div>
+                                
+                                <!-- Section Personnalisé -->
+                                <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700">
+                                    <p class="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Personnalisé</p>
+                                </div>
+                                <div class="p-3 border-t border-gray-200 dark:border-gray-600">
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Saisissez librement dans le champ ci-dessus</p>
+                                    <p class="text-xs text-gray-400 dark:text-gray-500">Valeurs acceptées : 1200 - 20000000</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="flex justify-end space-x-3">
@@ -286,5 +346,50 @@
     <script src="/js/pages/dashboard.js"></script>
     
     <script src="/js/main.js"></script>
+    
+    <style>
+        /* Styles pour le dropdown de baudrate */
+        .baudrate-option {
+            transition: all 0.15s ease;
+        }
+        
+        .baudrate-option:hover {
+            background-color: #f3f4f6;
+        }
+        
+        .dark .baudrate-option:hover {
+            background-color: #374151;
+        }
+        
+        .baudrate-option:active {
+            background-color: #e5e7eb;
+        }
+        
+        .dark .baudrate-option:active {
+            background-color: #4b5563;
+        }
+        
+        /* Animation du dropdown */
+        #baudrateDropdown {
+            transition: all 0.2s ease;
+        }
+        
+        #baudrateDropdown.show {
+            display: block !important;
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        #baudrateDropdown.hidden {
+            display: none !important;
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        
+        /* Style pour l'option recommandée */
+        .baudrate-option[data-baudrate="115200"] {
+            font-weight: 500;
+        }
+    </style>
 </body>
 </html>

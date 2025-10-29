@@ -8,6 +8,8 @@ class MachineManager {
         this.currentEditingMachine = null;
         this.currentConsoleMachine = null;
         this.readers = new Map(); // Pour stocker les readers Web Serial
+        this.connectionMonitors = new Map(); // Pour stocker les monitors de connexion
+        this.heartbeatIntervals = new Map(); // Pour stocker les intervalles de heartbeat
         this.init();
     }
 
@@ -74,6 +76,107 @@ class MachineManager {
                 }
             });
         }
+
+        // Gestion des préréglages de baudrate
+        this.bindBaudrateEvents();
+    }
+
+    bindBaudrateEvents() {
+        const dropdownBtn = document.getElementById('baudrateDropdownBtn');
+        const dropdown = document.getElementById('baudrateDropdown');
+        const baudrateInput = document.getElementById('machineBaudRate');
+
+        // Toggle du dropdown
+        if (dropdownBtn && dropdown) {
+            dropdownBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleBaudrateDropdown();
+            });
+        }
+
+        // Options du dropdown
+        const optionButtons = document.querySelectorAll('.baudrate-option');
+        optionButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                const baudrate = e.target.getAttribute('data-baudrate');
+                this.selectBaudrateOption(baudrate);
+            });
+        });
+
+        // Fermer le dropdown en cliquant à l'extérieur
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#baudrateDropdown') && !e.target.closest('#baudrateDropdownBtn')) {
+                this.hideBaudrateDropdown();
+            }
+        });
+
+        // Validation en temps réel de l'input
+        if (baudrateInput) {
+            baudrateInput.addEventListener('input', (e) => {
+                this.validateBaudrateInput(e.target.value);
+            });
+
+            baudrateInput.addEventListener('blur', (e) => {
+                this.validateBaudrateInput(e.target.value);
+            });
+        }
+    }
+
+    toggleBaudrateDropdown() {
+        const dropdown = document.getElementById('baudrateDropdown');
+        if (dropdown) {
+            if (dropdown.classList.contains('hidden')) {
+                this.showBaudrateDropdown();
+            } else {
+                this.hideBaudrateDropdown();
+            }
+        }
+    }
+
+    showBaudrateDropdown() {
+        const dropdown = document.getElementById('baudrateDropdown');
+        if (dropdown) {
+            dropdown.classList.remove('hidden');
+            dropdown.classList.add('show');
+        }
+    }
+
+    hideBaudrateDropdown() {
+        const dropdown = document.getElementById('baudrateDropdown');
+        if (dropdown) {
+            dropdown.classList.add('hidden');
+            dropdown.classList.remove('show');
+        }
+    }
+
+    selectBaudrateOption(baudrate) {
+        const baudrateInput = document.getElementById('machineBaudRate');
+        if (baudrateInput) {
+            baudrateInput.value = baudrate;
+            baudrateInput.focus();
+        }
+        
+        // Fermer le dropdown
+        this.hideBaudrateDropdown();
+        
+        // Validation
+        this.validateBaudrateInput(baudrate);
+    }
+
+    validateBaudrateInput(value) {
+        const baudrateInput = document.getElementById('machineBaudRate');
+        if (!baudrateInput) return;
+
+        const numValue = parseInt(value);
+        
+        // Validation
+        if (isNaN(numValue) || numValue < 1200 || numValue > 20000000) {
+            baudrateInput.style.borderColor = '#EF4444';
+            baudrateInput.style.backgroundColor = '#FEF2F2';
+        } else {
+            baudrateInput.style.borderColor = '';
+            baudrateInput.style.backgroundColor = '';
+        }
     }
 
     showModal(machineId) {
@@ -91,8 +194,20 @@ class MachineManager {
         nameInput.value = machine.name;
         baudRateSelect.value = machine.baudRate;
 
+        // Initialiser les préréglages de baudrate
+        this.initializeBaudratePresets(machine.baudRate);
+
         modal.classList.remove('hidden');
         nameInput.focus();
+    }
+
+    initializeBaudratePresets(currentBaudrate) {
+        const baudrateInput = document.getElementById('machineBaudRate');
+        if (baudrateInput) {
+            baudrateInput.value = currentBaudrate;
+            // Validation de la valeur initiale
+            this.validateBaudrateInput(currentBaudrate);
+        }
     }
 
     hideModal() {
@@ -125,18 +240,40 @@ class MachineManager {
         modal.classList.remove('hidden');
         consoleInput.focus();
 
-        // Démarrer la lecture des données
-        this.startReadingSerial(machineId);
+        // Démarrer la lecture des données seulement si pas déjà active
+        if (!this.readers.has(machineId)) {
+            this.startReadingSerial(machineId);
+        }
     }
 
     async hideConsoleModal() {
         const modal = document.getElementById('consoleModal');
         modal.classList.add('hidden');
         
-        // Arrêter la lecture si une machine était en cours
+        // Ne pas arrêter la lecture, juste fermer la console
+        // La connexion doit rester active
         if (this.currentConsoleMachine) {
-            await this.stopReadingSerial(this.currentConsoleMachine);
             this.currentConsoleMachine = null;
+        }
+    }
+
+    /**
+     * Arrêter seulement la lecture de console sans affecter la connexion
+     */
+    async stopConsoleReading(machineId) {
+        if (this.readers.has(machineId)) {
+            const reader = this.readers.get(machineId);
+            if (reader) {
+                try {
+                    await reader.cancel();
+                    reader.releaseLock();
+                } catch (error) {
+                    console.error('Erreur lors de l\'arrêt de la lecture console:', error);
+                }
+            }
+            this.readers.delete(machineId);
+            // Ne pas arrêter le monitoring de connexion
+            // Ne pas afficher de message de fermeture
         }
     }
 
@@ -205,6 +342,11 @@ class MachineManager {
             const reader = machine.port.readable.getReader();
             this.readers.set(machineId, reader);
 
+            // Démarrer le monitoring de connexion (seulement si pas déjà actif)
+            if (!this.connectionMonitors.has(machineId)) {
+                this.startConnectionMonitoring(machineId);
+            }
+
             // Fonction pour lire les données
             const readLoop = async () => {
                 try {
@@ -213,6 +355,7 @@ class MachineManager {
                         
                         if (done) {
                             console.log('Lecture terminée');
+                            this.handleConnectionLost(machineId, 'Port fermé');
                             break;
                         }
 
@@ -225,16 +368,26 @@ class MachineManager {
                         
                         for (const line of lines) {
                             if (line.trim()) {
-                                this.appendToConsole(line.trim());
+                                // Afficher dans la console seulement si elle est ouverte
+                                if (this.currentConsoleMachine === machineId) {
+                                    this.appendToConsole(line.trim());
+                                }
+                                // Mettre à jour lastSeen quand on reçoit des données
+                                machine.lastSeen = new Date();
                             }
                         }
                     }
                 } catch (error) {
                     console.error('Erreur lors de la lecture:', error);
-                    this.appendToConsole(`[Erreur lecture] ${error.message}`, 'text-red-400');
+                    if (this.currentConsoleMachine === machineId) {
+                        this.appendToConsole(`[Erreur lecture] ${error.message}`, 'text-red-400');
+                    }
+                    this.handleConnectionLost(machineId, error.message);
                 } finally {
                     reader.releaseLock();
                     this.readers.delete(machineId);
+                    // Ne pas arrêter le monitoring de connexion ici
+                    // Il doit continuer même si la console est fermée
                 }
             };
 
@@ -243,9 +396,12 @@ class MachineManager {
 
         } catch (error) {
             console.error('Erreur lors du démarrage de la lecture:', error);
-            this.appendToConsole(`[Erreur] ${error.message}`, 'text-red-400');
+            if (this.currentConsoleMachine === machineId) {
+                this.appendToConsole(`[Erreur] ${error.message}`, 'text-red-400');
+            }
             // Nettoyer en cas d'erreur
             this.readers.delete(machineId);
+            this.handleConnectionLost(machineId, error.message);
         }
     }
 
@@ -261,7 +417,176 @@ class MachineManager {
                 }
             }
             this.readers.delete(machineId);
-            this.appendToConsole('[Console fermée]', 'text-gray-500 dark:text-gray-400');
+            // Ne pas arrêter le monitoring de connexion ici
+            // Ne pas fermer le port, seulement arrêter la lecture
+            // Afficher le message seulement si la console est ouverte
+            if (this.currentConsoleMachine === machineId) {
+                this.appendToConsole('[Console fermée]', 'text-gray-500 dark:text-gray-400');
+            }
+        }
+    }
+
+    /**
+     * Démarrer le monitoring de connexion pour une machine
+     */
+    startConnectionMonitoring(machineId) {
+        const machine = this.machines.get(machineId);
+        if (!machine) return;
+
+        // Arrêter le monitoring existant s'il y en a un
+        this.stopConnectionMonitoring(machineId);
+
+        // Démarrer le heartbeat
+        const heartbeatInterval = setInterval(async () => {
+            await this.checkConnectionHealth(machineId);
+        }, 5000); // Vérifier toutes les 5 secondes
+
+        this.heartbeatIntervals.set(machineId, heartbeatInterval);
+
+        // Démarrer le monitoring de port
+        const monitorInterval = setInterval(async () => {
+            await this.checkPortStatus(machineId);
+        }, 2000); // Vérifier le port toutes les 2 secondes
+
+        this.connectionMonitors.set(machineId, monitorInterval);
+
+        console.log(`Monitoring de connexion démarré pour ${machine.name}`);
+    }
+
+    /**
+     * Arrêter le monitoring de connexion pour une machine
+     */
+    stopConnectionMonitoring(machineId) {
+        // Arrêter le heartbeat
+        if (this.heartbeatIntervals.has(machineId)) {
+            clearInterval(this.heartbeatIntervals.get(machineId));
+            this.heartbeatIntervals.delete(machineId);
+        }
+
+        // Arrêter le monitoring de port
+        if (this.connectionMonitors.has(machineId)) {
+            clearInterval(this.connectionMonitors.get(machineId));
+            this.connectionMonitors.delete(machineId);
+        }
+
+        console.log(`Monitoring de connexion arrêté pour ${machineId}`);
+    }
+
+    /**
+     * Vérifier la santé de la connexion
+     */
+    async checkConnectionHealth(machineId) {
+        const machine = this.machines.get(machineId);
+        if (!machine || !machine.isConnected) return;
+
+        try {
+            // Vérifier si le port est toujours accessible
+            if (!machine.port || !machine.port.readable) {
+                this.handleConnectionLost(machineId, 'Port non accessible');
+                return;
+            }
+
+            // Vérifier si on n'a pas reçu de données depuis trop longtemps
+            const now = new Date();
+            const timeSinceLastSeen = now - machine.lastSeen;
+            const maxSilenceTime = 30000; // 30 secondes
+
+            if (timeSinceLastSeen > maxSilenceTime) {
+                console.log(`Aucune donnée reçue depuis ${Math.round(timeSinceLastSeen / 1000)}s pour ${machine.name}`);
+                // Ne pas déconnecter automatiquement, juste logger
+            }
+
+        } catch (error) {
+            console.error('Erreur lors de la vérification de la connexion:', error);
+            this.handleConnectionLost(machineId, error.message);
+        }
+    }
+
+    /**
+     * Vérifier le statut du port série
+     */
+    async checkPortStatus(machineId) {
+        const machine = this.machines.get(machineId);
+        if (!machine || !machine.isConnected) return;
+
+        try {
+            // Tenter d'accéder au port pour vérifier s'il est toujours disponible
+            if (machine.port) {
+                // Vérifier si le port est toujours ouvert
+                if (!machine.port.readable) {
+                    this.handleConnectionLost(machineId, 'Port fermé inattendu');
+                    return;
+                }
+            }
+        } catch (error) {
+            // Si on ne peut pas accéder au port, c'est qu'il a été déconnecté
+            console.error('Port inaccessible:', error);
+            this.handleConnectionLost(machineId, 'Port déconnecté physiquement');
+        }
+    }
+
+    /**
+     * Gérer la perte de connexion
+     */
+    async handleConnectionLost(machineId, reason) {
+        const machine = this.machines.get(machineId);
+        if (!machine) return;
+
+        console.log(`Connexion perdue pour ${machine.name}: ${reason}`);
+
+        // Arrêter tous les monitoring
+        this.stopConnectionMonitoring(machineId);
+        
+        // Arrêter la lecture si active
+        if (this.readers.has(machineId)) {
+            await this.stopReadingSerial(machineId);
+        }
+
+        // Fermer proprement le port et nettoyer les références
+        if (machine.port) {
+            try {
+                // Essayer de fermer le port proprement
+                if (machine.port.readable) {
+                    // Si le port est encore ouvert, essayer de le fermer
+                    try {
+                        await machine.port.close();
+                    } catch (closeError) {
+                        console.log('Erreur lors de la fermeture du port:', closeError);
+                        // Le port peut être déjà fermé ou dans un état invalide
+                    }
+                }
+                
+                // Attendre un peu pour s'assurer que le port est bien libéré
+                await new Promise(resolve => setTimeout(resolve, 200));
+                
+                // Réinitialiser la référence du port pour forcer une nouvelle connexion
+                machine.port = null;
+            } catch (error) {
+                console.error('Erreur lors du nettoyage du port:', error);
+                // En cas d'erreur, réinitialiser quand même la référence
+                machine.port = null;
+            }
+        }
+
+        // Mettre à jour le statut
+        machine.status = 'disconnected';
+        machine.isConnected = false;
+        machine.lastSeen = new Date();
+
+        // Mettre à jour l'affichage
+        this.updateDisplay();
+
+        // Afficher une notification
+        notificationManager.show(`Machine ${machine.name} déconnectée (${reason})`, 'warning');
+
+        // Mettre à jour la base de données
+        if (machine.uuid) {
+            await this.updatePortInDB(machine);
+        }
+
+        // Ajouter un message dans la console si elle est ouverte
+        if (this.currentConsoleMachine === machineId) {
+            this.appendToConsole(`[Déconnexion] ${reason}`, 'text-red-400');
         }
     }
 
@@ -292,7 +617,7 @@ class MachineManager {
             // Demander l'accès aux ports série
             const port = await navigator.serial.requestPort();
             
-            // Ouvrir le port avec baud rate par défaut
+            // Ouvrir le port avec baud rate par défaut (115200)
             await port.open({ baudRate: 115200 });
             
             // Générer un ID unique pour la machine
@@ -322,6 +647,12 @@ class MachineManager {
                 machine.status = 'connected';
                 machine.isConnected = true;
                 machine.lastSeen = new Date();
+                
+                // Démarrer le monitoring de connexion
+                this.startConnectionMonitoring(machineId);
+                
+                // Démarrer la lecture en arrière-plan
+                this.startReadingSerial(machineId);
                 
                 // Envoyer la commande M990 pour obtenir l'UUID
                 await this.sendCommandAndParseUUID(machineId);
@@ -556,6 +887,12 @@ class MachineManager {
                 machine.isConnected = true;
                 machine.lastSeen = new Date();
                 
+                // Démarrer le monitoring de connexion
+                this.startConnectionMonitoring(machineId);
+                
+                // Démarrer la lecture en arrière-plan
+                this.startReadingSerial(machineId);
+                
                 // Mettre à jour le port COM dans la BDD
                 if (machine.uuid) {
                     await this.updatePortInDB(machine);
@@ -620,13 +957,29 @@ class MachineManager {
         if (!machine) return;
 
         try {
+            // Arrêter le monitoring de connexion
+            this.stopConnectionMonitoring(machineId);
+            
             // Arrêter la lecture si un reader est actif
             if (this.readers.has(machineId)) {
                 await this.stopReadingSerial(machineId);
             }
 
-            // Fermer le port
-            await machine.port.close();
+            // Fermer proprement le port et nettoyer les références
+            if (machine.port) {
+                try {
+                    // Essayer de fermer le port proprement
+                    if (machine.port.readable) {
+                        await machine.port.close();
+                    }
+                } catch (error) {
+                    console.log('Port déjà fermé ou erreur lors de la fermeture:', error);
+                }
+                // Attendre un peu pour s'assurer que le port est libéré
+                await new Promise(resolve => setTimeout(resolve, 200));
+                // Réinitialiser la référence du port
+                machine.port = null;
+            }
             
             // Mettre à jour le port COM dans la BDD
             if (machine.uuid) {
@@ -640,6 +993,11 @@ class MachineManager {
         } catch (error) {
             console.error('Erreur lors de la déconnexion:', error);
             // En cas d'erreur, forcer la déconnexion
+            this.stopConnectionMonitoring(machineId);
+            // Réinitialiser la référence du port même en cas d'erreur
+            if (machine.port) {
+                machine.port = null;
+            }
             machine.status = 'disconnected';
             machine.isConnected = false;
             this.updateDisplay();
@@ -655,27 +1013,58 @@ class MachineManager {
             machine.status = 'connecting';
             this.updateDisplay();
 
-            // Fermer le port s'il est ouvert
-            try {
-                if (machine.port && machine.port.readable && this.readers.has(machineId)) {
-                    await this.stopReadingSerial(machineId);
-                }
-                await machine.port.close();
-            } catch (error) {
-                console.log('Port déjà fermé ou erreur lors de la fermeture:', error);
+            // Arrêter le monitoring et la lecture
+            this.stopConnectionMonitoring(machineId);
+            if (this.readers.has(machineId)) {
+                await this.stopReadingSerial(machineId);
             }
 
-            // Attendre un peu avant de rouvrir
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // Nettoyer l'ancien port s'il existe
+            if (machine.port) {
+                try {
+                    // Essayer de fermer le port proprement
+                    if (machine.port.readable) {
+                        await machine.port.close();
+                    }
+                } catch (error) {
+                    console.log('Port déjà fermé ou erreur lors de la fermeture:', error);
+                }
+                // Attendre un peu pour s'assurer que le port est libéré
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
 
-            // Rouvrir le port
-            await machine.port.open({ baudRate: machine.baudRate });
+            // Vérifier si l'API Web Serial est supportée
+            if (!('serial' in navigator)) {
+                notificationManager.show('Web Serial API non supportée par ce navigateur', 'error');
+                machine.status = 'disconnected';
+                this.updateDisplay();
+                return;
+            }
+
+            // Demander un nouveau port (l'utilisateur doit sélectionner)
+            const port = await navigator.serial.requestPort();
+
+            // Ouvrir le nouveau port
+            await port.open({ baudRate: machine.baudRate });
+
+            // Mettre à jour les références
+            machine.port = port;
+            this.ports.set(machineId, port);
+
+            // Mettre à jour l'affichage
+            this.updateDisplay();
 
             // Simuler la reconnexion
             setTimeout(async () => {
                 machine.status = 'connected';
                 machine.isConnected = true;
                 machine.lastSeen = new Date();
+                
+                // Démarrer le monitoring de connexion
+                this.startConnectionMonitoring(machineId);
+                
+                // Démarrer la lecture en arrière-plan
+                this.startReadingSerial(machineId);
                 
                 // Mettre à jour le port COM dans la BDD
                 if (machine.uuid) {
@@ -688,9 +1077,32 @@ class MachineManager {
 
         } catch (error) {
             console.error('Erreur de reconnexion:', error);
-            machine.status = 'error';
+            
+            // Nettoyer en cas d'erreur
+            if (machine.port) {
+                try {
+                    if (machine.port.readable) {
+                        await machine.port.close();
+                    }
+                } catch (closeError) {
+                    // Ignorer les erreurs de fermeture
+                }
+                machine.port = null;
+            }
+            
+            machine.status = 'disconnected';
+            machine.isConnected = false;
             this.updateDisplay();
-            notificationManager.show(`Erreur de reconnexion: ${machine.name}`, 'error');
+            
+            if (error.name === 'NotFoundError') {
+                notificationManager.show('Aucun port série trouvé', 'error');
+            } else if (error.name === 'NotAllowedError') {
+                notificationManager.show('Accès au port série refusé', 'error');
+            } else if (error.name === 'NetworkError') {
+                notificationManager.show('Port déjà utilisé ou inaccessible', 'error');
+            } else {
+                notificationManager.show(`Erreur de reconnexion: ${error.message}`, 'error');
+            }
         }
     }
 
@@ -700,6 +1112,9 @@ class MachineManager {
 
         if (confirm(`Êtes-vous sûr de vouloir supprimer la machine "${machine.name}" ?`)) {
             try {
+                // Arrêter le monitoring de connexion
+                this.stopConnectionMonitoring(machineId);
+                
                 // Arrêter la lecture si un reader est actif
                 if (this.readers.has(machineId)) {
                     await this.stopReadingSerial(machineId);
