@@ -11,10 +11,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body class="min-h-screen bg-gray-50 font-sans">
-    <div class="min-h-screen bg-gray-50">
+<body class="min-h-screen bg-gray-50 dark:bg-gray-900 font-sans transition-colors duration-200">
+    <div class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
         <!-- Menu horizontal -->
-        <nav class="bg-white shadow-sm border-b border-gray-200">
+        <nav class="bg-white dark:bg-gray-900 shadow-sm border-b border-gray-200 dark:border-gray-800 transition-colors duration-200">
             <div class="px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center h-16">
                     <!-- Message de bienvenue -->
@@ -22,7 +22,7 @@
                             <a href="/dashboard" class="flex items-center">
                                 <img src="/assets/images/logos/logo-lineacnc.svg" alt="LineaCNC" class="h-8 hover:opacity-80 transition-opacity">
                             </a>
-                            <h1 class="text-xl font-semibold text-gray-900">
+                            <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100">
                                 Bonjour, <%= user.pseudo %>
                             </h1>
                         </div>
@@ -31,7 +31,7 @@
                     <div class="relative">
                         <button 
                             id="settingsButton" 
-                            class="flex items-center space-x-2 text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+                            class="flex items-center space-x-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 px-3 py-2 rounded-md text-sm font-medium transition-colors"
                         >
                             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
@@ -46,11 +46,11 @@
                         <!-- Dropdown menu -->
                         <div 
                             id="settingsDropdown" 
-                            class="hidden absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50 border border-gray-200"
+                            class="hidden absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg py-1 z-50 border border-gray-200 dark:border-gray-800 transition-colors duration-200"
                         >
                             <a 
                                 href="/account" 
-                                class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                                class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                             >
                                 <div class="flex items-center">
                                     <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -59,6 +59,50 @@
                                     Paramètres du compte
                                 </div>
                             </a>
+                            
+                            <!-- Séparateur -->
+                            <div class="border-t border-gray-200 dark:border-gray-800 my-1"></div>
+                            
+                            <!-- Sélecteur de thème -->
+                            <div class="px-2 py-1">
+                                <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 px-2">Thème</div>
+                                <div class="flex items-center justify-between gap-1">
+                                    <button 
+                                        data-theme="light"
+                                        class="theme-btn flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
+                                        title="Mode clair"
+                                    >
+                                        <svg class="h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-yellow-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                                        </svg>
+                                        <span class="text-xs text-gray-600 dark:text-gray-400">Clair</span>
+                                    </button>
+                                    <button 
+                                        data-theme="dark"
+                                        class="theme-btn flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
+                                        title="Mode sombre"
+                                    >
+                                        <svg class="h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                                        </svg>
+                                        <span class="text-xs text-gray-600 dark:text-gray-400">Sombre</span>
+                                    </button>
+                                    <button 
+                                        data-theme="auto"
+                                        class="theme-btn flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
+                                        title="Automatique"
+                                    >
+                                        <svg class="h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-purple-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                                        </svg>
+                                        <span class="text-xs text-gray-600 dark:text-gray-400">Auto</span>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Séparateur -->
+                            <div class="border-t border-gray-200 dark:border-gray-800 my-1"></div>
+                            
                             <form action="/auth/logout" method="POST" class="block">
                                 <button 
                                     type="submit" 
@@ -95,8 +139,8 @@
                 <!-- En-tête des machines -->
                 <div class="flex justify-between items-center mb-6">
                     <div>
-                        <h2 class="text-2xl font-bold text-gray-900">Machines CNC</h2>
-                        <p class="text-gray-600">Gestion des machines connectées via Web Serial</p>
+                        <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">Machines CNC</h2>
+                        <p class="text-gray-600 dark:text-gray-400">Gestion des machines connectées via Web Serial</p>
                     </div>
                     <button 
                         id="addMachineBtn" 
@@ -116,15 +160,15 @@
 
                 <!-- Message quand aucune machine -->
                 <div id="noMachinesMessage" class="text-center py-12 hidden">
-                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
                     </svg>
-                    <h3 class="mt-2 text-sm font-medium text-gray-900">Aucune machine connectée</h3>
-                    <p class="mt-1 text-sm text-gray-500">
+                    <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">Aucune machine connectée</h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
                         Cliquez sur "Ajouter une machine" pour commencer.
                     </p>
-                    <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        <p class="text-xs text-blue-700">
+                    <div class="mt-4 p-3 bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-800 rounded-lg">
+                        <p class="text-xs text-blue-700 dark:text-blue-300">
                             <strong>Note :</strong> L'API Web Serial nécessite HTTPS ou localhost. 
                             Assurez-vous que votre imprimante est connectée via USB.
                         </p>
@@ -135,12 +179,12 @@
     </div>
 
     <!-- Modal de paramètres de machine -->
-    <div id="machineModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
-        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+    <div id="machineModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 dark:bg-black dark:bg-opacity-70 overflow-y-auto h-full w-full hidden z-50 transition-colors duration-200">
+        <div class="relative top-20 mx-auto p-5 border border-gray-200 dark:border-gray-800 w-96 shadow-lg rounded-md bg-white dark:bg-gray-800 transition-colors duration-200">
             <div class="mt-3">
                 <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-medium text-gray-900">Modifier les paramètres</h3>
-                    <button id="closeModal" class="text-gray-400 hover:text-gray-600">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">Modifier les paramètres</h3>
+                    <button id="closeModal" class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300">
                         <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                         </svg>
@@ -149,7 +193,7 @@
                 
                 <form id="machineForm">
                     <div class="mb-4">
-                        <label for="machineName" class="block text-sm font-medium text-gray-700 mb-2">Nom de la machine</label>
+                        <label for="machineName" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Nom de la machine</label>
                         <input 
                             type="text" 
                             id="machineName" 
@@ -160,7 +204,7 @@
                     </div>
                     
                     <div class="mb-4">
-                        <label for="machineBaudRate" class="block text-sm font-medium text-gray-700 mb-2">Vitesse de transmission</label>
+                        <label for="machineBaudRate" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Vitesse de transmission</label>
                         <select id="machineBaudRate" class="input-field">
                             <option value="9600">9600 baud</option>
                             <option value="19200">19200 baud</option>
@@ -194,12 +238,12 @@
     </div>
 
     <!-- Modal Console Serial -->
-    <div id="consoleModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
-        <div class="relative top-20 mx-auto p-5 border w-full max-w-4xl shadow-lg rounded-md bg-white">
+    <div id="consoleModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 dark:bg-black dark:bg-opacity-70 overflow-y-auto h-full w-full hidden z-50 transition-colors duration-200">
+        <div class="relative top-20 mx-auto p-5 border border-gray-200 dark:border-gray-800 w-full max-w-4xl shadow-lg rounded-md bg-white dark:bg-gray-800 transition-colors duration-200">
             <div class="mt-3">
                 <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-medium text-gray-900">Console Serial</h3>
-                    <button id="closeConsoleModal" class="text-gray-400 hover:text-gray-600">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">Console Serial</h3>
+                    <button id="closeConsoleModal" class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300">
                         <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                         </svg>
@@ -226,7 +270,7 @@
                         Envoyer
                     </button>
                 </div>
-                <p class="text-xs text-gray-500 mt-2">
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
                     Ctrl+Enter pour envoyer • Les données entrantes s'affichent automatiquement
                 </p>
             </div>
@@ -236,6 +280,7 @@
     <!-- Scripts séparés pour une meilleure organisation -->
     <script src="/js/config.js"></script>
     <script src="/js/utils/notification.js"></script>
+    <script src="/js/utils/theme-manager.js"></script>
     <script src="/js/components/dropdown-manager.js"></script>
     <script src="/js/components/machine-manager.js"></script>
     <script src="/js/pages/dashboard.js"></script>

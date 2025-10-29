@@ -120,7 +120,7 @@ class MachineManager {
         const consoleInput = document.getElementById('consoleInput');
 
         // Vider la console
-        consoleOutput.innerHTML = '<div class="text-gray-500">Console ouverte. En attente de données...</div>';
+        consoleOutput.innerHTML = '<div class="text-gray-500 dark:text-gray-400">Console ouverte. En attente de données...</div>';
 
         modal.classList.remove('hidden');
         consoleInput.focus();
@@ -261,7 +261,7 @@ class MachineManager {
                 }
             }
             this.readers.delete(machineId);
-            this.appendToConsole('[Console fermée]', 'text-gray-500');
+            this.appendToConsole('[Console fermée]', 'text-gray-500 dark:text-gray-400');
         }
     }
 
@@ -574,19 +574,42 @@ class MachineManager {
         const machine = this.machines.get(machineId);
         if (!machine) return;
 
+        const oldBaudRate = machine.baudRate;
         machine.name = name;
         machine.baudRate = baudRate;
         
-        // Si la machine est connectée, fermer et rouvrir avec le nouveau baud rate
-        if (machine.isConnected) {
+        // Si la machine est connectée et que le baud rate a changé, fermer et rouvrir
+        if (machine.isConnected && oldBaudRate !== baudRate) {
             try {
-                machine.port.close();
+                // Arrêter les readers actifs
+                if (this.readers.has(machineId)) {
+                    await this.stopReadingSerial(machineId);
+                }
+
+                // Fermer le port
+                await machine.port.close();
+                
+                // Attendre un peu avant de rouvrir
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Rouvrir avec le nouveau baud rate
                 await machine.port.open({ baudRate: baudRate });
+                
                 notificationManager.show(`Machine ${name} mise à jour`, 'success');
             } catch (error) {
+                console.error('Erreur lors de la mise à jour:', error);
                 machine.status = 'error';
+                machine.isConnected = false;
                 notificationManager.show('Erreur lors de la mise à jour', 'error');
             }
+        } else {
+            // Si seulement le nom a changé, pas besoin de fermer/rouvrir
+            notificationManager.show(`Machine ${name} mise à jour`, 'success');
+        }
+
+        // Sauvegarder en BDD si UUID présent
+        if (machine.uuid) {
+            await this.saveMachineToDB(machine);
         }
 
         this.updateDisplay();
@@ -735,10 +758,10 @@ class MachineManager {
         tile.className = 'card p-4 hover:shadow-lg transition-shadow duration-200';
         
         const statusColors = {
-            'connected': 'text-green-600 bg-green-100',
-            'connecting': 'text-yellow-600 bg-yellow-100',
-            'disconnected': 'text-gray-600 bg-gray-100',
-            'error': 'text-red-600 bg-red-100'
+            'connected': 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900',
+            'connecting': 'text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900',
+            'disconnected': 'text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800',
+            'error': 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900'
         };
 
         const statusTexts = {
@@ -757,14 +780,14 @@ class MachineManager {
                         </svg>
                     </div>
                     <div class="min-w-0 flex-1">
-                        <h3 class="text-sm font-semibold text-gray-900 truncate">${machine.name}</h3>
-                        <p class="text-xs text-gray-500">${machine.baudRate} baud</p>
+                        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">${machine.name}</h3>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">${machine.baudRate} baud</p>
                     </div>
                 </div>
                 <div class="flex space-x-1">
                     <button 
                         onclick="machineManager.showModal('${machine.id}')"
-                        class="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                        class="p-1 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                         title="Paramètres"
                     >
                         <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -775,7 +798,7 @@ class MachineManager {
                     ${machine.isConnected ? `
                     <button 
                         onclick="machineManager.showConsoleModal('${machine.id}')"
-                        class="p-1 text-gray-400 hover:text-green-600 transition-colors"
+                        class="p-1 text-gray-500 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
                         title="Console Serial"
                     >
                         <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -785,7 +808,7 @@ class MachineManager {
                     ` : ''}
                     <button 
                         onclick="machineManager.removeMachine('${machine.id}')"
-                        class="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                        class="p-1 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                         title="Supprimer"
                     >
                         <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -797,29 +820,29 @@ class MachineManager {
 
             <div class="space-y-2">
                 <div class="flex items-center justify-between">
-                    <span class="text-xs font-medium text-gray-700">Statut:</span>
+                    <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Statut:</span>
                     <span class="px-2 py-1 text-xs font-semibold rounded-full ${statusColors[machine.status]}">
                         ${statusTexts[machine.status]}
                     </span>
                 </div>
                 
                 <div class="flex items-center justify-between">
-                    <span class="text-xs font-medium text-gray-700">Activité:</span>
-                    <span class="text-xs text-gray-500">${this.formatTime(machine.lastSeen)}</span>
+                    <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Activité:</span>
+                    <span class="text-xs text-gray-500 dark:text-gray-400">${this.formatTime(machine.lastSeen)}</span>
                 </div>
                 
                 ${machine.uuid ? `
-                <div class="mt-2 pt-2 border-t border-gray-200">
-                    <div class="bg-gray-100 rounded-lg px-2 py-1.5">
-                        <div class="text-xs font-medium text-gray-600 mb-0.5">UUID Firmware</div>
-                        <div class="text-xs font-mono text-gray-800 break-all">${machine.uuid}</div>
+                <div class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-800">
+                    <div class="bg-gray-100 dark:bg-gray-900 rounded-lg px-2 py-1.5">
+                        <div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">UUID Firmware</div>
+                        <div class="text-xs font-mono text-gray-800 dark:text-gray-200 break-all">${machine.uuid}</div>
                     </div>
                 </div>
                 ` : ''}
             </div>
 
             ${machine.status === 'connected' ? `
-                <div class="mt-3 pt-3 border-t border-gray-200">
+                <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-800">
                     <div class="flex space-x-2">
                         <button 
                             onclick="machineManager.disconnectMachine('${machine.id}')"
@@ -833,7 +856,7 @@ class MachineManager {
                     </div>
                 </div>
             ` : machine.status === 'disconnected' ? `
-                <div class="mt-3 pt-3 border-t border-gray-200">
+                <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-800">
                     <button 
                         onclick="machineManager.reconnectMachine('${machine.id}')"
                         class="w-full btn-primary text-xs py-1.5"
