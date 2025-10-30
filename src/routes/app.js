@@ -188,10 +188,14 @@ router.delete('/api/machines/:uuid', requireAuth, async (req, res) => {
     const userId = req.session.user.id;
     const { uuid } = req.params;
 
-    await executeQuery(
+    const result = await executeQuery(
       'DELETE FROM machines WHERE uuid = ? AND user_id = ?',
       [uuid, userId]
     );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Machine non trouvée' });
+    }
 
     res.json({ success: true, message: 'Machine supprimée' });
   } catch (error) {

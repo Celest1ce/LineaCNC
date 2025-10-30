@@ -855,6 +855,11 @@ class MachineManager {
 
     async updatePortInDB(machine) {
         try {
+            if (!machine.port) {
+                console.log('Port null, pas de mise à jour BDD');
+                return;
+            }
+            
             const portInfo = machine.port.getInfo();
             const portName = portInfo.usbProductId ? `COM${portInfo.usbProductId}` : 'unknown';
             
@@ -1695,7 +1700,10 @@ class MachineManager {
 
     async removeMachine(machineId) {
         const machine = this.machines.get(machineId);
-        if (!machine) return;
+        if (!machine) {
+            console.warn(`Machine ${machineId} introuvable`);
+            return;
+        }
 
         if (confirm(`Êtes-vous sûr de vouloir supprimer la machine "${machine.name}" ?`)) {
             try {
@@ -1724,7 +1732,11 @@ class MachineManager {
 
                 // Fermer le port si connecté
                 if (machine.isConnected && machine.port) {
-                    await machine.port.close();
+                    try {
+                        await machine.port.close();
+                    } catch (error) {
+                        console.warn('Port déjà fermé ou en cours de fermeture:', error.message);
+                    }
                 }
 
                 // Supprimer les références locales
@@ -1736,7 +1748,39 @@ class MachineManager {
                 notificationManager.show(`Machine ${machine.name} supprimée`, 'success');
             } catch (error) {
                 console.error('Erreur lors de la suppression:', error);
-                notificationManager.show(`Erreur lors de la suppression: ${error.message}`, 'error');
+                
+                // Si c'est une erreur 404 (machine non trouvée en BDD), 
+                // supprimer quand même localement
+                if (error.message.includes('Machine non trouvée') || error.message.includes('404')) {
+                    
+                    // Arrêter le monitoring de connexion
+                    this.stopConnectionMonitoring(machineId);
+                    
+                    // Arrêter la lecture si un reader est actif
+                    if (this.readers.has(machineId)) {
+                        await this.stopReadingSerial(machineId);
+                    }
+
+                    // Fermer le port si connecté
+                    if (machine.isConnected && machine.port) {
+                        try {
+                            await machine.port.close();
+                        } catch (closeError) {
+                            console.warn('Port déjà fermé:', closeError.message);
+                        }
+                    }
+
+                    // Supprimer les références locales
+                    this.machines.delete(machineId);
+                    this.ports.delete(machineId);
+                    this.readers.delete(machineId);
+                    
+                    this.updateDisplay();
+                    notificationManager.show(`Machine ${machine.name} supprimée (localement)`, 'success');
+                } else {
+                    // Pour les autres erreurs, ne pas supprimer localement
+                    notificationManager.show(`Erreur lors de la suppression: ${error.message}`, 'error');
+                }
             }
         }
     }
