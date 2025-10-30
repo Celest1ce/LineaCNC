@@ -14,6 +14,7 @@ const config = {
         'config.js',
         'utils/notification.js',
         'components/dropdown-manager.js',
+        'views/machine-tile-view.js',
         'components/machine-manager.js',
         'pages/dashboard.js',
         'main.js'
