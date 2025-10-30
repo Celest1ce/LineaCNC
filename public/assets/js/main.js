@@ -5,6 +5,13 @@
 // Charger la configuration
 // La configuration est définie dans config.js
 
+// Initialisation CSRF
+window.LineaCNC = window.LineaCNC || {};
+const csrfMetaTag = document.querySelector('meta[name="csrf-token"]');
+if (csrfMetaTag) {
+    window.LineaCNC.csrfToken = csrfMetaTag.getAttribute('content');
+}
+
 // Utilitaires globaux
 window.LineaCNC.utils = {
     /**

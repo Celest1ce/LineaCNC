@@ -13,6 +13,7 @@ const dbConfig = {
 };
 
 let pool = null;
+const shouldSeedTestUser = process.env.SEED_TEST_USER === 'true';
 
 // Initialisation de la connexion à la base de données
 async function initDatabase() {
@@ -27,6 +28,8 @@ async function initDatabase() {
     // Créer les tables si elles n'existent pas
     await createUsersTable(connection);
     await createMachinesTable(connection);
+    await createLogsTable(connection);
+    await createUserSessionsTable(connection);
     
     connection.release();
     return true;
@@ -53,17 +56,23 @@ async function createUsersTable(connection) {
     await connection.execute(createTableQuery);
     console.log('✅ Table users créée/vérifiée');
     
-    // Vérifier s'il y a des utilisateurs, sinon créer un utilisateur test par défaut
     const [rows] = await connection.execute('SELECT COUNT(*) as count FROM users');
     if (rows[0].count === 0) {
-      const bcrypt = require('bcrypt');
-      const hashedPassword = await bcrypt.hash('test123', 10);
-      
-      await connection.execute(
-        'INSERT INTO users (email, password, pseudo) VALUES (?, ?, ?)',
-        ['test@lineacnc.com', hashedPassword, 'Utilisateur Test']
-      );
-      console.log('✅ Utilisateur test créé (email: test@lineacnc.com, mot de passe: test123)');
+      if (shouldSeedTestUser) {
+        const bcrypt = require('bcrypt');
+        const seedPassword = process.env.SEED_TEST_PASSWORD || 'test123';
+        const seedEmail = process.env.SEED_TEST_EMAIL || 'test@lineacnc.com';
+        const seedPseudo = process.env.SEED_TEST_PSEUDO || 'Utilisateur Test';
+        const hashedPassword = await bcrypt.hash(seedPassword, 10);
+
+        await connection.execute(
+          'INSERT INTO users (email, password, pseudo) VALUES (?, ?, ?)',
+          [seedEmail, hashedPassword, seedPseudo]
+        );
+        console.log(`✅ Utilisateur de test créé (email: ${seedEmail})`);
+      } else {
+        console.warn('⚠️ Aucun utilisateur présent dans la base. Créez un compte via l\'interface ou définissez SEED_TEST_USER=true pour en générer un.');
+      }
     }
   } catch (error) {
     console.error('❌ Erreur lors de la création de la table users:', error.message);
@@ -100,6 +109,59 @@ async function createMachinesTable(connection) {
   }
 }
 
+async function createLogsTable(connection) {
+  try {
+    const createTableQuery = `
+      CREATE TABLE IF NOT EXISTS logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        level VARCHAR(32) NOT NULL,
+        type VARCHAR(64) NOT NULL,
+        message TEXT NOT NULL,
+        user_id INT NULL,
+        session_id VARCHAR(255) NULL,
+        ip_address VARCHAR(45) NULL,
+        user_agent VARCHAR(255) NULL,
+        details JSON NULL,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_logs_user_id (user_id),
+        INDEX idx_logs_session_id (session_id),
+        INDEX idx_logs_level (level),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `;
+
+    await connection.execute(createTableQuery);
+    console.log('✅ Table logs créée/vérifiée');
+  } catch (error) {
+    console.error('❌ Erreur lors de la création de la table logs:', error.message);
+    throw error;
+  }
+}
+
+async function createUserSessionsTable(connection) {
+  try {
+    const createTableQuery = `
+      CREATE TABLE IF NOT EXISTS user_sessions (
+        session_id VARCHAR(255) PRIMARY KEY,
+        user_id INT NOT NULL,
+        login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        logout_time TIMESTAMP NULL,
+        duration_minutes INT NULL,
+        ip_address VARCHAR(45) NULL,
+        user_agent VARCHAR(255) NULL,
+        INDEX idx_user_sessions_user_id (user_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `;
+
+    await connection.execute(createTableQuery);
+    console.log('✅ Table user_sessions créée/vérifiée');
+  } catch (error) {
+    console.error('❌ Erreur lors de la création de la table user_sessions:', error.message);
+    throw error;
+  }
+}
+
 // Fonction pour obtenir une connexion du pool
 async function getConnection() {
   if (!pool) {
@@ -131,6 +193,7 @@ module.exports = {
   initDatabase,
   getConnection,
   executeQuery,
-  closeDatabase
+  closeDatabase,
+  dbConfig
 };
 

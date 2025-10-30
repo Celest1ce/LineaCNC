@@ -1,25 +1,22 @@
+const { logSecurity } = require('../utils/logging');
+
 // Middleware d'authentification
-function requireAuth(req, res, next) {
-  console.log('🔒 requireAuth - Session:', req.session?.user ? 'Connecté' : 'Non connecté');
-  console.log('🔒 Session ID:', req.sessionID);
+async function requireAuth(req, res, next) {
   if (req.session && req.session.user) {
     return next();
-  } else {
-    console.log('❌ Accès refusé, redirection vers login');
-    return res.redirect('/auth/login');
   }
+
+  await logSecurity('unauthenticated_access', 'Tentative d\'accès non authentifié', req);
+  return res.redirect('/auth/login');
 }
 
 // Middleware pour rediriger les utilisateurs connectés
-function redirectIfAuthenticated(req, res, next) {
-  console.log('🔄 redirectIfAuthenticated - Session:', req.session?.user ? 'Connecté' : 'Non connecté');
-  console.log('🔄 Session ID:', req.sessionID);
+async function redirectIfAuthenticated(req, res, next) {
   if (req.session && req.session.user) {
-    console.log('✅ Utilisateur déjà connecté, redirection vers dashboard');
+    await logSecurity('redundant_login_attempt', 'Utilisateur connecté accédant à la page de connexion', req);
     return res.redirect('/dashboard');
-  } else {
-    return next();
   }
+  return next();
 }
 
 module.exports = {

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><%= title %> - LineaCNC</title>
+    <meta name="csrf-token" content="<%= csrfToken %>">
     <link rel="icon" href="/assets/images/logos/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/css/styles.css">
     <link rel="stylesheet" href="/css/notifications.css">
@@ -49,6 +50,7 @@
                     <div class="card p-6">
                         <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Modifier le pseudo</h2>
                         <form action="/account/update-pseudo" method="POST" class="space-y-4">
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                             <div>
                                 <label for="pseudo" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     Nouveau pseudo
@@ -75,6 +77,7 @@
                     <div class="card p-6">
                         <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Changer le mot de passe</h2>
                         <form action="/account/change-password" method="POST" class="space-y-4">
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                             <div>
                                 <label for="currentPassword" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     Mot de passe actuel

@@ -12,6 +12,10 @@ class MachineManager {
         this.heartbeatIntervals = new Map(); // Pour stocker les intervalles de heartbeat
         this.commandHistory = []; // Historique des commandes
         this.historyIndex = -1; // Index actuel dans l'historique
+        this.csrfHeaders = () => {
+            const token = window.LineaCNC?.csrfToken;
+            return token ? { 'X-CSRF-Token': token } : {};
+        };
         this.init();
     }
 
@@ -259,7 +263,7 @@ class MachineManager {
 
         // Démarrer la lecture des données seulement si pas déjà active
         if (!this.readers.has(machineId)) {
-            this.startReadingSerial(machineId);
+        this.startReadingSerial(machineId);
         }
     }
 
@@ -426,7 +430,7 @@ class MachineManager {
                             if (line.trim()) {
                                 // Afficher dans la console seulement si elle est ouverte
                                 if (this.currentConsoleMachine === machineId) {
-                                    this.appendToConsole(line.trim());
+                                this.appendToConsole(line.trim());
                                 }
                                 // Mettre à jour lastSeen quand on reçoit des données
                                 machine.lastSeen = new Date();
@@ -436,7 +440,7 @@ class MachineManager {
                 } catch (error) {
                     console.error('Erreur lors de la lecture:', error);
                     if (this.currentConsoleMachine === machineId) {
-                        this.appendToConsole(`[Erreur lecture] ${error.message}`, 'text-red-400');
+                    this.appendToConsole(`[Erreur lecture] ${error.message}`, 'text-red-400');
                     }
                     this.handleConnectionLost(machineId, error.message);
                 } finally {
@@ -453,7 +457,7 @@ class MachineManager {
         } catch (error) {
             console.error('Erreur lors du démarrage de la lecture:', error);
             if (this.currentConsoleMachine === machineId) {
-                this.appendToConsole(`[Erreur] ${error.message}`, 'text-red-400');
+            this.appendToConsole(`[Erreur] ${error.message}`, 'text-red-400');
             }
             // Nettoyer en cas d'erreur
             this.readers.delete(machineId);
@@ -477,7 +481,7 @@ class MachineManager {
             // Ne pas fermer le port, seulement arrêter la lecture
             // Afficher le message seulement si la console est ouverte
             if (this.currentConsoleMachine === machineId) {
-                this.appendToConsole('[Console fermée]', 'text-gray-500 dark:text-gray-400');
+            this.appendToConsole('[Console fermée]', 'text-gray-500 dark:text-gray-400');
             }
         }
     }
@@ -705,12 +709,16 @@ class MachineManager {
                 machine.status = 'retrieving';
                 this.updateDisplay();
                 
-                // Récupérer l'UUID AVANT de démarrer la lecture en arrière-plan
-                const detectedUUID = await this.getUUIDFromPort(port, false);
+                // Récupérer l'UUID et le nom AVANT de démarrer la lecture en arrière-plan
+                const detectedInfo = await this.getUUIDFromPort(port, false);
                 
-                if (detectedUUID) {
-                    machine.uuid = detectedUUID;
-                    console.log('UUID trouvé:', detectedUUID);
+                if (detectedInfo) {
+                    machine.uuid = detectedInfo.uuid;
+                    if (detectedInfo.machineName) {
+                        machine.name = detectedInfo.machineName;
+                        console.log('Nom de machine détecté:', detectedInfo.machineName);
+                    }
+                    console.log('UUID trouvé:', detectedInfo.uuid);
                     
                     // Sauvegarder la machine en BDD
                     await this.saveMachineToDB(machine);
@@ -830,7 +838,8 @@ class MachineManager {
             const response = await fetch('/api/machines', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    ...this.csrfHeaders()
                 },
                 body: JSON.stringify({
                     uuid: machine.uuid,
@@ -851,13 +860,19 @@ class MachineManager {
 
     async updatePortInDB(machine) {
         try {
+            if (!machine.port) {
+                console.log('Port null, pas de mise à jour BDD');
+                return;
+            }
+            
             const portInfo = machine.port.getInfo();
             const portName = portInfo.usbProductId ? `COM${portInfo.usbProductId}` : 'unknown';
             
             const response = await fetch('/api/machines', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    ...this.csrfHeaders()
                 },
                 body: JSON.stringify({
                     uuid: machine.uuid,
@@ -879,7 +894,11 @@ class MachineManager {
     async loadMachinesFromDB() {
         try {
             // 1. Charger toutes les machines de la BDD
-            const response = await fetch('/api/machines');
+            const response = await fetch('/api/machines', {
+                headers: {
+                    ...this.csrfHeaders()
+                }
+            });
             const machines = await response.json();
             
             console.log('Machines chargées depuis la BDD:', machines);
@@ -974,11 +993,11 @@ class MachineManager {
                 await port.open({ baudRate: 115200 });
                 
                 // Envoyer M990 automatiquement
-                const detectedUUID = await this.getUUIDFromPort(port, true);
+                const detectedInfo = await this.getUUIDFromPort(port, true);
                 
-                if (detectedUUID) {
+                if (detectedInfo) {
                     // Trouver la machine correspondante
-                    const machine = this.findMachineByUUID(detectedUUID);
+                    const machine = this.findMachineByUUID(detectedInfo.uuid);
                     
                     if (machine) {
                         // 1. Statut "connecting" - Connexion au port
@@ -1024,7 +1043,7 @@ class MachineManager {
                     } else {
                         // UUID inconnu - fermer le port
                         await port.close();
-                        console.log(`UUID ${detectedUUID} inconnu - port fermé`);
+                        console.log(`UUID ${detectedInfo.uuid} inconnu - port fermé`);
                     }
                 } else {
                     // Impossible de détecter l'UUID - fermer le port
@@ -1106,18 +1125,42 @@ class MachineManager {
 
             await readPromise;
 
-            // Parser l'UUID de la réponse
-            // Format attendu: "Firmware Build UUID:\nbc140b75-8e0f-4f49-9723-268f574c5df3\nok"
+            // Parser la réponse M990 pour extraire UUID et nom de machine
+            let uuid = null;
+            let machineName = null;
+            
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i].trim();
-                // UUID Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-                const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                if (uuidRegex.test(line)) {
-                    if (!silent) {
-                        console.log('UUID trouvé:', line);
+                
+                // Chercher l'UUID: "Build UUID: bba13cbf-06d5-4dcc-bbdf-e31e95807911"
+                if (line.startsWith('Build UUID:')) {
+                    const uuidMatch = line.match(/Build UUID:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+                    if (uuidMatch) {
+                        uuid = uuidMatch[1];
+                        if (!silent) {
+                            console.log('UUID trouvé:', uuid);
+                        }
                     }
-                    return line;
                 }
+                
+                // Chercher le nom de la machine: "Machine Name: Ender-3 Max 4.2.2"
+                if (line.startsWith('Machine Name:')) {
+                    const nameMatch = line.match(/Machine Name:\s*(.+)/);
+                    if (nameMatch) {
+                        machineName = nameMatch[1].trim();
+                        if (!silent) {
+                            console.log('Nom de machine trouvé:', machineName);
+                        }
+                    }
+                }
+            }
+            
+            // Retourner un objet avec UUID et nom si trouvés
+            if (uuid) {
+                return {
+                    uuid: uuid,
+                    machineName: machineName || null
+                };
             }
             
             return null;
@@ -1159,9 +1202,9 @@ class MachineManager {
             await port.open({ baudRate: machine.baudRate });
             
             // Envoyer M990 automatiquement (pas de notification)
-            const detectedUUID = await this.getUUIDFromPort(port, true);
+            const detectedInfo = await this.getUUIDFromPort(port, true);
             
-            if (!detectedUUID) {
+            if (!detectedInfo) {
                 await port.close();
                 notificationManager.show(
                     'Impossible de détecter l\'UUID de la machine', 
@@ -1171,7 +1214,7 @@ class MachineManager {
             }
             
             // Vérifier la correspondance
-            if (detectedUUID === machine.uuid) {
+            if (detectedInfo.uuid === machine.uuid) {
                 // 1. Statut "connecting" - Connexion au port
                 machine.status = 'connecting';
                 machine.port = port;
@@ -1215,7 +1258,7 @@ class MachineManager {
                 return true;
             } else {
                 // Mauvaise machine - chercher la bonne
-                const correctMachine = this.findMachineByUUID(detectedUUID);
+                const correctMachine = this.findMachineByUUID(detectedInfo.uuid);
                 
                 if (correctMachine) {
                     // Déconnecter l'ancienne si connectée
@@ -1528,7 +1571,7 @@ class MachineManager {
                 try {
                     // Essayer de fermer le port proprement
                     if (machine.port.readable) {
-                        await machine.port.close();
+            await machine.port.close();
                     }
                 } catch (error) {
                     console.log('Port déjà fermé ou erreur lors de la fermeture:', error);
@@ -1575,19 +1618,19 @@ class MachineManager {
             // Arrêter le monitoring et la lecture
             this.stopConnectionMonitoring(machineId);
             if (this.readers.has(machineId)) {
-                await this.stopReadingSerial(machineId);
-            }
+                    await this.stopReadingSerial(machineId);
+                }
 
             // Nettoyer l'ancien port s'il existe
             if (machine.port) {
                 try {
                     // Essayer de fermer le port proprement
                     if (machine.port.readable) {
-                        await machine.port.close();
+                await machine.port.close();
                     }
-                } catch (error) {
-                    console.log('Port déjà fermé ou erreur lors de la fermeture:', error);
-                }
+            } catch (error) {
+                console.log('Port déjà fermé ou erreur lors de la fermeture:', error);
+            }
                 // Attendre un peu pour s'assurer que le port est libéré
                 await new Promise(resolve => setTimeout(resolve, 300));
             }
@@ -1667,10 +1710,29 @@ class MachineManager {
 
     async removeMachine(machineId) {
         const machine = this.machines.get(machineId);
-        if (!machine) return;
+        if (!machine) {
+            console.warn(`Machine ${machineId} introuvable`);
+            return;
+        }
 
         if (confirm(`Êtes-vous sûr de vouloir supprimer la machine "${machine.name}" ?`)) {
             try {
+                // Supprimer de la base de données si UUID présent
+                if (machine.uuid) {
+                    const response = await fetch(`/api/machines/${machine.uuid}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...this.csrfHeaders()
+                        }
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Erreur lors de la suppression en base de données');
+                    }
+                }
+
                 // Arrêter le monitoring de connexion
                 this.stopConnectionMonitoring(machineId);
                 
@@ -1681,21 +1743,55 @@ class MachineManager {
 
                 // Fermer le port si connecté
                 if (machine.isConnected && machine.port) {
-                    await machine.port.close();
+                    try {
+                        await machine.port.close();
+                    } catch (error) {
+                        console.warn('Port déjà fermé ou en cours de fermeture:', error.message);
+                    }
                 }
 
-                // Supprimer les références
+                // Supprimer les références locales
                 this.machines.delete(machineId);
                 this.ports.delete(machineId);
+                this.readers.delete(machineId);
+                
                 this.updateDisplay();
-                notificationManager.show(`Machine ${machine.name} supprimée`, 'info');
+                notificationManager.show(`Machine ${machine.name} supprimée`, 'success');
             } catch (error) {
                 console.error('Erreur lors de la suppression:', error);
-                // Forcer la suppression même en cas d'erreur
-                this.machines.delete(machineId);
-                this.ports.delete(machineId);
-                this.updateDisplay();
-                notificationManager.show(`Machine ${machine.name} supprimée`, 'info');
+                
+                // Si c'est une erreur 404 (machine non trouvée en BDD), 
+                // supprimer quand même localement
+                if (error.message.includes('Machine non trouvée') || error.message.includes('404')) {
+                    
+                    // Arrêter le monitoring de connexion
+                    this.stopConnectionMonitoring(machineId);
+                    
+                    // Arrêter la lecture si un reader est actif
+                    if (this.readers.has(machineId)) {
+                        await this.stopReadingSerial(machineId);
+                    }
+
+                    // Fermer le port si connecté
+                    if (machine.isConnected && machine.port) {
+                        try {
+                            await machine.port.close();
+                        } catch (closeError) {
+                            console.warn('Port déjà fermé:', closeError.message);
+                        }
+                    }
+
+                    // Supprimer les références locales
+                    this.machines.delete(machineId);
+                    this.ports.delete(machineId);
+                    this.readers.delete(machineId);
+                    
+                    this.updateDisplay();
+                    notificationManager.show(`Machine ${machine.name} supprimée (localement)`, 'success');
+                } else {
+                    // Pour les autres erreurs, ne pas supprimer localement
+                    notificationManager.show(`Erreur lors de la suppression: ${error.message}`, 'error');
+                }
             }
         }
     }
