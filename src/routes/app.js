@@ -2,6 +2,15 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const { executeQuery } = require('../config/database');
 const { requireAuth } = require('../middleware/auth');
+const {
+  logUserAction,
+  logError
+} = require('../utils/logging');
+const {
+  updatePseudoSchema,
+  changePasswordSchema,
+  machineSchema
+} = require('../validation/schemas');
 
 const router = express.Router();
 
@@ -43,29 +52,37 @@ router.get('/account', requireAuth, (req, res) => {
 
 // Mise à jour du pseudo
 router.post('/account/update-pseudo', requireAuth, async (req, res) => {
-  const { pseudo } = req.body;
+  const { error: validationError, value } = updatePseudoSchema.validate(req.body, {
+    abortEarly: false,
+    stripUnknown: true
+  });
+
+  if (validationError) {
+    req.session.error = 'Le pseudo doit contenir entre 2 et 100 caractères.';
+    return res.redirect('/account');
+  }
+
+  const { pseudo } = value;
   const userId = req.session.user.id;
 
   try {
-    if (!pseudo || pseudo.trim().length < 2) {
-      req.session.error = 'Le pseudo doit contenir au moins 2 caractères';
-      return res.redirect('/account');
-    }
-
-    // Mettre à jour le pseudo dans la base de données
     await executeQuery(
       'UPDATE users SET pseudo = ? WHERE id = ?',
       [pseudo.trim(), userId]
     );
 
-    // Mettre à jour la session
     req.session.user.pseudo = pseudo.trim();
-
     req.session.success = 'Pseudo mis à jour avec succès !';
+    await logUserAction('update_pseudo_success', `Pseudo mis à jour pour l'utilisateur ${userId}`, req, {
+      userId
+    });
     res.redirect('/account');
 
   } catch (error) {
     console.error('Erreur lors de la mise à jour du pseudo:', error);
+    await logError('update_pseudo_failed', error.message, req, {
+      userId
+    });
     req.session.error = 'Une erreur s\'est produite lors de la mise à jour';
     res.redirect('/account');
   }
@@ -73,27 +90,25 @@ router.post('/account/update-pseudo', requireAuth, async (req, res) => {
 
 // Changement de mot de passe
 router.post('/account/change-password', requireAuth, async (req, res) => {
-  const { currentPassword, newPassword, confirmPassword } = req.body;
+  const { error: validationError, value } = changePasswordSchema.validate(req.body, {
+    abortEarly: false,
+    stripUnknown: true
+  });
+
+  if (validationError) {
+    req.session.error = 'Veuillez vérifier les informations de mot de passe.';
+    return res.redirect('/account');
+  }
+
+  const { currentPassword, newPassword, confirmPassword } = value;
   const userId = req.session.user.id;
 
   try {
-    // Validation des données
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      req.session.error = 'Veuillez remplir tous les champs';
-      return res.redirect('/account');
-    }
-
     if (newPassword !== confirmPassword) {
       req.session.error = 'Les nouveaux mots de passe ne correspondent pas';
       return res.redirect('/account');
     }
 
-    if (newPassword.length < 6) {
-      req.session.error = 'Le nouveau mot de passe doit contenir au moins 6 caractères';
-      return res.redirect('/account');
-    }
-
-    // Récupérer le mot de passe actuel
     const users = await executeQuery(
       'SELECT password FROM users WHERE id = ?',
       [userId]
@@ -104,27 +119,30 @@ router.post('/account/change-password', requireAuth, async (req, res) => {
       return res.redirect('/account');
     }
 
-    // Vérifier le mot de passe actuel
     const isValidPassword = await bcrypt.compare(currentPassword, users[0].password);
     if (!isValidPassword) {
       req.session.error = 'Mot de passe actuel incorrect';
       return res.redirect('/account');
     }
 
-    // Hasher le nouveau mot de passe
     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
 
-    // Mettre à jour le mot de passe
     await executeQuery(
       'UPDATE users SET password = ? WHERE id = ?',
       [hashedNewPassword, userId]
     );
 
     req.session.success = 'Mot de passe modifié avec succès !';
+    await logUserAction('password_changed', `Mot de passe modifié pour l'utilisateur ${userId}`, req, {
+      userId
+    });
     res.redirect('/account');
 
   } catch (error) {
     console.error('Erreur lors du changement de mot de passe:', error);
+    await logError('password_change_failed', error.message, req, {
+      userId
+    });
     req.session.error = 'Une erreur s\'est produite lors du changement de mot de passe';
     res.redirect('/account');
   }
@@ -133,36 +151,47 @@ router.post('/account/change-password', requireAuth, async (req, res) => {
 // API - Sauvegarder une machine
 router.post('/api/machines', requireAuth, async (req, res) => {
   try {
-    const { uuid, name, baudRate, port } = req.body;
-    const userId = req.session.user.id;
+    const { error: validationError, value } = machineSchema.validate(req.body, {
+      abortEarly: false,
+      stripUnknown: true
+    });
 
-    if (!uuid || !name) {
-      return res.status(400).json({ error: 'UUID et nom requis' });
+    if (validationError) {
+      return res.status(400).json({ error: 'Données machine invalides.' });
     }
 
-    // Vérifier si la machine existe déjà POUR CET UTILISATEUR
+    const { uuid, name, baudRate, port } = value;
+    const userId = req.session.user.id;
+
     const existing = await executeQuery(
       'SELECT id FROM machines WHERE uuid = ? AND user_id = ?',
       [uuid, userId]
     );
 
     if (existing.length > 0) {
-      // Mettre à jour la machine de cet utilisateur
       await executeQuery(
         'UPDATE machines SET name = ?, baud_rate = ?, last_port = ?, updated_at = NOW() WHERE uuid = ? AND user_id = ?',
         [name, baudRate || 115200, port, uuid, userId]
       );
+      await logUserAction('machine_updated', `Machine ${uuid} mise à jour`, req, {
+        userId,
+        uuid
+      });
       return res.json({ success: true, message: 'Machine mise à jour' });
-    } else {
-      // Créer une nouvelle machine pour cet utilisateur
-      await executeQuery(
-        'INSERT INTO machines (user_id, uuid, name, baud_rate, last_port) VALUES (?, ?, ?, ?, ?)',
-        [userId, uuid, name, baudRate || 115200, port]
-      );
-      return res.json({ success: true, message: 'Machine enregistrée' });
     }
+
+    await executeQuery(
+      'INSERT INTO machines (user_id, uuid, name, baud_rate, last_port) VALUES (?, ?, ?, ?, ?)',
+      [userId, uuid, name, baudRate || 115200, port]
+    );
+    await logUserAction('machine_created', `Machine ${uuid} créée`, req, {
+      userId,
+      uuid
+    });
+    return res.json({ success: true, message: 'Machine enregistrée' });
   } catch (error) {
     console.error('Erreur sauvegarde machine:', error);
+    await logError('machine_save_failed', error.message, req);
     res.status(500).json({ error: 'Erreur lors de la sauvegarde' });
   }
 });
@@ -197,9 +226,14 @@ router.delete('/api/machines/:uuid', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Machine non trouvée' });
     }
 
+    await logUserAction('machine_deleted', `Machine ${uuid} supprimée`, req, {
+      userId,
+      uuid
+    });
     res.json({ success: true, message: 'Machine supprimée' });
   } catch (error) {
     console.error('Erreur suppression machine:', error);
+    await logError('machine_delete_failed', error.message, req);
     res.status(500).json({ error: 'Erreur lors de la suppression' });
   }
 });

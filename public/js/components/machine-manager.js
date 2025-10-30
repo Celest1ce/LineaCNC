@@ -12,6 +12,10 @@ class MachineManager {
         this.heartbeatIntervals = new Map(); // Pour stocker les intervalles de heartbeat
         this.commandHistory = []; // Historique des commandes
         this.historyIndex = -1; // Index actuel dans l'historique
+        this.csrfHeaders = () => {
+            const token = window.LineaCNC?.csrfToken;
+            return token ? { 'X-CSRF-Token': token } : {};
+        };
         this.init();
     }
 
@@ -834,7 +838,8 @@ class MachineManager {
             const response = await fetch('/api/machines', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    ...this.csrfHeaders()
                 },
                 body: JSON.stringify({
                     uuid: machine.uuid,
@@ -866,7 +871,8 @@ class MachineManager {
             const response = await fetch('/api/machines', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    ...this.csrfHeaders()
                 },
                 body: JSON.stringify({
                     uuid: machine.uuid,
@@ -888,7 +894,11 @@ class MachineManager {
     async loadMachinesFromDB() {
         try {
             // 1. Charger toutes les machines de la BDD
-            const response = await fetch('/api/machines');
+            const response = await fetch('/api/machines', {
+                headers: {
+                    ...this.csrfHeaders()
+                }
+            });
             const machines = await response.json();
             
             console.log('Machines chargées depuis la BDD:', machines);
@@ -1712,7 +1722,8 @@ class MachineManager {
                     const response = await fetch(`/api/machines/${machine.uuid}`, {
                         method: 'DELETE',
                         headers: {
-                            'Content-Type': 'application/json'
+                            'Content-Type': 'application/json',
+                            ...this.csrfHeaders()
                         }
                     });
 

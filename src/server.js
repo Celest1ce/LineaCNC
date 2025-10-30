@@ -1,28 +1,31 @@
 const express = require('express');
-const session = require('express-session');
 const path = require('path');
+const helmet = require('helmet');
+const csrf = require('csurf');
 require('dotenv').config();
 
 const { initDatabase } = require('./config/database');
+const { createSessionMiddleware } = require('./config/session');
+const { requestLogger, errorLogger } = require('./middleware/logging');
 const authRoutes = require('./routes/auth');
 const appRoutes = require('./routes/app');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configuration des sessions
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'default-secret-change-in-production',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: false, // Désactivé pour HTTP (Infomaniak gère HTTPS)
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000, // 24 heures
-    sameSite: 'lax' // Compatible avec Infomaniak
-  },
-  name: 'lineacnc.sid' // Nom personnalisé pour éviter les conflits
+app.use(helmet({
+  contentSecurityPolicy: false
 }));
+
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
+// Configuration des sessions
+app.use(createSessionMiddleware());
+
+// Journalisation des requêtes
+app.use(requestLogger);
 
 // Middleware pour parser les données
 app.use(express.urlencoded({ extended: true }));
@@ -52,7 +55,11 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
 // Middleware pour passer les données de session aux vues
+const csrfProtection = csrf();
+app.use(csrfProtection);
+
 app.use((req, res, next) => {
+  res.locals.csrfToken = req.csrfToken();
   res.locals.user = req.session.user || null;
   res.locals.isAuthenticated = !!req.session.user;
   next();
@@ -64,19 +71,36 @@ app.use('/', appRoutes);
 
 // Route 404
 app.use((req, res) => {
-  res.status(404).render('404', { 
+  res.status(404).render('404', {
     title: 'Page non trouvée',
     message: 'La page que vous recherchez n\'existe pas.'
   });
 });
 
-// Gestion des erreurs
+// Gestion des erreurs CSRF
 app.use((err, req, res, next) => {
-  console.error('Erreur serveur:', err);
+  if (err.code === 'EBADCSRFTOKEN') {
+    console.warn('⚠️ Jeton CSRF invalide détecté');
+    if (req.accepts('json')) {
+      return res.status(403).json({ error: 'Jeton CSRF invalide. Veuillez recharger la page.' });
+    }
+    return res.status(403).render('error', {
+      title: 'Action non autorisée',
+      message: 'La vérification de sécurité a échoué. Veuillez réessayer.'
+    });
+  }
+  return next(err);
+});
+
+// Gestion des erreurs
+app.use(errorLogger);
+
+app.use((err, req, res, next) => {
+  console.error('Erreur serveur:', err.message);
   res.status(500).render('error', {
     title: 'Erreur serveur',
-    message: process.env.NODE_ENV === 'production' 
-      ? 'Une erreur interne s\'est produite.' 
+    message: process.env.NODE_ENV === 'production'
+      ? 'Une erreur interne s\'est produite.'
       : err.message
   });
 });
@@ -84,15 +108,11 @@ app.use((err, req, res, next) => {
 // Initialisation et démarrage du serveur
 async function startServer() {
   try {
-    // Afficher les variables d'environnement pour diagnostic
-    console.log('🔍 Variables d\'environnement:');
-    console.log(`PORT: ${process.env.PORT || 'non défini'}`);
-    console.log(`DB_HOST: ${process.env.DB_HOST || 'non défini'}`);
-    console.log(`DB_USER: ${process.env.DB_USER || 'non défini'}`);
-    console.log(`DB_PASSWORD: ${process.env.DB_PASSWORD ? '***défini***' : 'non défini'}`);
-    console.log(`DB_NAME: ${process.env.DB_NAME || 'non défini'}`);
-    console.log(`SESSION_SECRET: ${process.env.SESSION_SECRET ? '***défini***' : 'non défini'}`);
-    console.log(`NODE_ENV: ${process.env.NODE_ENV || 'non défini'}`);
+    console.log('🔍 Variables d\'environnement importantes:');
+    console.log(`PORT défini: ${process.env.PORT ? 'oui' : 'non'}`);
+    console.log(`Configuration base de données présente: ${process.env.DB_HOST && process.env.DB_USER && process.env.DB_NAME ? 'oui' : 'non'}`);
+    console.log(`SESSION_SECRET défini: ${process.env.SESSION_SECRET ? 'oui' : 'non'}`);
+    console.log(`NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
     console.log('');
 
     // Initialiser la base de données

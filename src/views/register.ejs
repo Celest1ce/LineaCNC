@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><%= title %> - LineaCNC</title>
+    <meta name="csrf-token" content="<%= csrfToken %>">
     <link rel="icon" href="/assets/images/logos/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/css/styles.css">
     <link rel="stylesheet" href="/css/notifications.css">
@@ -41,6 +42,7 @@
                 <% } %>
                 
                 <form class="space-y-6" action="/auth/register" method="POST">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                     <div>
                         <label for="pseudo" class="block text-sm font-medium text-gray-700 mb-2">
                             Pseudo

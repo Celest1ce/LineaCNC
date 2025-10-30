@@ -18,12 +18,16 @@ async function logEvent(level, type, message, req, details = {}) {
     await executeQuery(
       `INSERT INTO logs (level, type, message, user_id, session_id, ip_address, user_agent, details)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [level, type, message, userId, sessionId, ipAddress, userAgent, JSON.stringify(details)]
+      [level, type, message, userId, sessionId, ipAddress, userAgent, JSON.stringify(details || {})]
     );
     // Pour le debug local, on peut aussi logger à la console
     // console.log(`[${level}] [${type}] ${message}`, details);
   } catch (error) {
     console.error('❌ Erreur lors de l\'enregistrement du log en BDD:', error.message);
+    console.log(`[${level}] [${type}] ${message}`, {
+      fallback: true,
+      details
+    });
   }
 }
 
@@ -73,7 +77,7 @@ async function createSessionLog(userId, sessionId, req) {
  */
 async function closeSessionLog(sessionId, req) {
   try {
-    const [sessionRows] = await executeQuery(
+    const sessionRows = await executeQuery(
       'SELECT login_time FROM user_sessions WHERE session_id = ?',
       [sessionId]
     );
