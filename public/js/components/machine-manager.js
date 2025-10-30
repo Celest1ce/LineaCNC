@@ -259,7 +259,7 @@ class MachineManager {
 
         // Démarrer la lecture des données seulement si pas déjà active
         if (!this.readers.has(machineId)) {
-            this.startReadingSerial(machineId);
+        this.startReadingSerial(machineId);
         }
     }
 
@@ -426,7 +426,7 @@ class MachineManager {
                             if (line.trim()) {
                                 // Afficher dans la console seulement si elle est ouverte
                                 if (this.currentConsoleMachine === machineId) {
-                                    this.appendToConsole(line.trim());
+                                this.appendToConsole(line.trim());
                                 }
                                 // Mettre à jour lastSeen quand on reçoit des données
                                 machine.lastSeen = new Date();
@@ -436,7 +436,7 @@ class MachineManager {
                 } catch (error) {
                     console.error('Erreur lors de la lecture:', error);
                     if (this.currentConsoleMachine === machineId) {
-                        this.appendToConsole(`[Erreur lecture] ${error.message}`, 'text-red-400');
+                    this.appendToConsole(`[Erreur lecture] ${error.message}`, 'text-red-400');
                     }
                     this.handleConnectionLost(machineId, error.message);
                 } finally {
@@ -453,7 +453,7 @@ class MachineManager {
         } catch (error) {
             console.error('Erreur lors du démarrage de la lecture:', error);
             if (this.currentConsoleMachine === machineId) {
-                this.appendToConsole(`[Erreur] ${error.message}`, 'text-red-400');
+            this.appendToConsole(`[Erreur] ${error.message}`, 'text-red-400');
             }
             // Nettoyer en cas d'erreur
             this.readers.delete(machineId);
@@ -477,7 +477,7 @@ class MachineManager {
             // Ne pas fermer le port, seulement arrêter la lecture
             // Afficher le message seulement si la console est ouverte
             if (this.currentConsoleMachine === machineId) {
-                this.appendToConsole('[Console fermée]', 'text-gray-500 dark:text-gray-400');
+            this.appendToConsole('[Console fermée]', 'text-gray-500 dark:text-gray-400');
             }
         }
     }
@@ -1556,7 +1556,7 @@ class MachineManager {
                 try {
                     // Essayer de fermer le port proprement
                     if (machine.port.readable) {
-                        await machine.port.close();
+            await machine.port.close();
                     }
                 } catch (error) {
                     console.log('Port déjà fermé ou erreur lors de la fermeture:', error);
@@ -1603,19 +1603,19 @@ class MachineManager {
             // Arrêter le monitoring et la lecture
             this.stopConnectionMonitoring(machineId);
             if (this.readers.has(machineId)) {
-                await this.stopReadingSerial(machineId);
-            }
+                    await this.stopReadingSerial(machineId);
+                }
 
             // Nettoyer l'ancien port s'il existe
             if (machine.port) {
                 try {
                     // Essayer de fermer le port proprement
                     if (machine.port.readable) {
-                        await machine.port.close();
+                await machine.port.close();
                     }
-                } catch (error) {
-                    console.log('Port déjà fermé ou erreur lors de la fermeture:', error);
-                }
+            } catch (error) {
+                console.log('Port déjà fermé ou erreur lors de la fermeture:', error);
+            }
                 // Attendre un peu pour s'assurer que le port est libéré
                 await new Promise(resolve => setTimeout(resolve, 300));
             }
@@ -1699,6 +1699,21 @@ class MachineManager {
 
         if (confirm(`Êtes-vous sûr de vouloir supprimer la machine "${machine.name}" ?`)) {
             try {
+                // Supprimer de la base de données si UUID présent
+                if (machine.uuid) {
+                    const response = await fetch(`/api/machines/${machine.uuid}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Erreur lors de la suppression en base de données');
+                    }
+                }
+
                 // Arrêter le monitoring de connexion
                 this.stopConnectionMonitoring(machineId);
                 
@@ -1712,18 +1727,16 @@ class MachineManager {
                     await machine.port.close();
                 }
 
-                // Supprimer les références
+                // Supprimer les références locales
                 this.machines.delete(machineId);
                 this.ports.delete(machineId);
+                this.readers.delete(machineId);
+                
                 this.updateDisplay();
-                notificationManager.show(`Machine ${machine.name} supprimée`, 'info');
+                notificationManager.show(`Machine ${machine.name} supprimée`, 'success');
             } catch (error) {
                 console.error('Erreur lors de la suppression:', error);
-                // Forcer la suppression même en cas d'erreur
-                this.machines.delete(machineId);
-                this.ports.delete(machineId);
-                this.updateDisplay();
-                notificationManager.show(`Machine ${machine.name} supprimée`, 'info');
+                notificationManager.show(`Erreur lors de la suppression: ${error.message}`, 'error');
             }
         }
     }
