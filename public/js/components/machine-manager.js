@@ -705,12 +705,16 @@ class MachineManager {
                 machine.status = 'retrieving';
                 this.updateDisplay();
                 
-                // Récupérer l'UUID AVANT de démarrer la lecture en arrière-plan
-                const detectedUUID = await this.getUUIDFromPort(port, false);
+                // Récupérer l'UUID et le nom AVANT de démarrer la lecture en arrière-plan
+                const detectedInfo = await this.getUUIDFromPort(port, false);
                 
-                if (detectedUUID) {
-                    machine.uuid = detectedUUID;
-                    console.log('UUID trouvé:', detectedUUID);
+                if (detectedInfo) {
+                    machine.uuid = detectedInfo.uuid;
+                    if (detectedInfo.machineName) {
+                        machine.name = detectedInfo.machineName;
+                        console.log('Nom de machine détecté:', detectedInfo.machineName);
+                    }
+                    console.log('UUID trouvé:', detectedInfo.uuid);
                     
                     // Sauvegarder la machine en BDD
                     await this.saveMachineToDB(machine);
@@ -974,11 +978,11 @@ class MachineManager {
                 await port.open({ baudRate: 115200 });
                 
                 // Envoyer M990 automatiquement
-                const detectedUUID = await this.getUUIDFromPort(port, true);
+                const detectedInfo = await this.getUUIDFromPort(port, true);
                 
-                if (detectedUUID) {
+                if (detectedInfo) {
                     // Trouver la machine correspondante
-                    const machine = this.findMachineByUUID(detectedUUID);
+                    const machine = this.findMachineByUUID(detectedInfo.uuid);
                     
                     if (machine) {
                         // 1. Statut "connecting" - Connexion au port
@@ -1024,7 +1028,7 @@ class MachineManager {
                     } else {
                         // UUID inconnu - fermer le port
                         await port.close();
-                        console.log(`UUID ${detectedUUID} inconnu - port fermé`);
+                        console.log(`UUID ${detectedInfo.uuid} inconnu - port fermé`);
                     }
                 } else {
                     // Impossible de détecter l'UUID - fermer le port
@@ -1106,18 +1110,42 @@ class MachineManager {
 
             await readPromise;
 
-            // Parser l'UUID de la réponse
-            // Format attendu: "Firmware Build UUID:\nbc140b75-8e0f-4f49-9723-268f574c5df3\nok"
+            // Parser la réponse M990 pour extraire UUID et nom de machine
+            let uuid = null;
+            let machineName = null;
+            
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i].trim();
-                // UUID Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-                const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                if (uuidRegex.test(line)) {
-                    if (!silent) {
-                        console.log('UUID trouvé:', line);
+                
+                // Chercher l'UUID: "Build UUID: bba13cbf-06d5-4dcc-bbdf-e31e95807911"
+                if (line.startsWith('Build UUID:')) {
+                    const uuidMatch = line.match(/Build UUID:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+                    if (uuidMatch) {
+                        uuid = uuidMatch[1];
+                        if (!silent) {
+                            console.log('UUID trouvé:', uuid);
+                        }
                     }
-                    return line;
                 }
+                
+                // Chercher le nom de la machine: "Machine Name: Ender-3 Max 4.2.2"
+                if (line.startsWith('Machine Name:')) {
+                    const nameMatch = line.match(/Machine Name:\s*(.+)/);
+                    if (nameMatch) {
+                        machineName = nameMatch[1].trim();
+                        if (!silent) {
+                            console.log('Nom de machine trouvé:', machineName);
+                        }
+                    }
+                }
+            }
+            
+            // Retourner un objet avec UUID et nom si trouvés
+            if (uuid) {
+                return {
+                    uuid: uuid,
+                    machineName: machineName || null
+                };
             }
             
             return null;
@@ -1159,9 +1187,9 @@ class MachineManager {
             await port.open({ baudRate: machine.baudRate });
             
             // Envoyer M990 automatiquement (pas de notification)
-            const detectedUUID = await this.getUUIDFromPort(port, true);
+            const detectedInfo = await this.getUUIDFromPort(port, true);
             
-            if (!detectedUUID) {
+            if (!detectedInfo) {
                 await port.close();
                 notificationManager.show(
                     'Impossible de détecter l\'UUID de la machine', 
@@ -1171,7 +1199,7 @@ class MachineManager {
             }
             
             // Vérifier la correspondance
-            if (detectedUUID === machine.uuid) {
+            if (detectedInfo.uuid === machine.uuid) {
                 // 1. Statut "connecting" - Connexion au port
                 machine.status = 'connecting';
                 machine.port = port;
@@ -1215,7 +1243,7 @@ class MachineManager {
                 return true;
             } else {
                 // Mauvaise machine - chercher la bonne
-                const correctMachine = this.findMachineByUUID(detectedUUID);
+                const correctMachine = this.findMachineByUUID(detectedInfo.uuid);
                 
                 if (correctMachine) {
                     // Déconnecter l'ancienne si connectée
