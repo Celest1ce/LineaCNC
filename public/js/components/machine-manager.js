@@ -1825,15 +1825,33 @@ class MachineManager {
 
     createMachineTile(machine) {
         const tile = document.createElement('div');
-        tile.className = 'card p-4 hover:shadow-lg transition-shadow duration-200';
-        
-        const statusColors = {
-            'connected': 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900',
-            'connecting': 'text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900',
-            'retrieving': 'text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900',
-            'ready': 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900',
-            'disconnected': 'text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800',
-            'error': 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900'
+        tile.className = 'group relative overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm hover:shadow-xl transition-all duration-300 p-5 flex flex-col';
+
+        const statusThemes = {
+            'connected': {
+                badge: 'text-emerald-600 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-900/40',
+                dot: 'bg-emerald-500 dark:bg-emerald-300'
+            },
+            'connecting': {
+                badge: 'text-amber-600 dark:text-amber-300 bg-amber-100/80 dark:bg-amber-900/40',
+                dot: 'bg-amber-500 dark:bg-amber-300'
+            },
+            'retrieving': {
+                badge: 'text-blue-600 dark:text-blue-300 bg-blue-100/80 dark:bg-blue-900/40',
+                dot: 'bg-blue-500 dark:bg-blue-300'
+            },
+            'ready': {
+                badge: 'text-emerald-600 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-900/40',
+                dot: 'bg-emerald-500 dark:bg-emerald-300'
+            },
+            'disconnected': {
+                badge: 'text-gray-600 dark:text-gray-300 bg-gray-100/80 dark:bg-gray-800/60',
+                dot: 'bg-gray-400 dark:bg-gray-500'
+            },
+            'error': {
+                badge: 'text-red-600 dark:text-red-300 bg-red-100/80 dark:bg-red-900/40',
+                dot: 'bg-red-500 dark:bg-red-300'
+            }
         };
 
         const statusTexts = {
@@ -1845,113 +1863,122 @@ class MachineManager {
             'error': 'Erreur'
         };
 
+        const statusTheme = statusThemes[machine.status] || statusThemes.disconnected;
+
         tile.innerHTML = `
-            <div class="flex items-start justify-between mb-3">
-                <div class="flex items-center space-x-2">
-                    <div class="p-1.5 bg-blue-100 rounded-lg">
-                        <svg class="h-4 w-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
-                        </svg>
+            <div class="absolute inset-0 bg-gradient-to-br from-blue-50 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 dark:from-blue-500/10 dark:via-transparent dark:to-transparent"></div>
+            <div class="relative flex h-full flex-col">
+                <div class="flex items-start justify-between">
+                    <div class="flex items-start space-x-3">
+                        <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:bg-blue-400/10 dark:text-blue-300">
+                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                            </svg>
+                        </div>
+                        <div class="min-w-0">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-300">Machine CNC</p>
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 leading-tight truncate">${machine.name}</h3>
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Port ${machine.port || 'non assigné'}</p>
+                        </div>
                     </div>
-                    <div class="min-w-0 flex-1">
-                        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">${machine.name}</h3>
-                        <p class="text-xs text-gray-500 dark:text-gray-400">${machine.baudRate} baud</p>
-                    </div>
-                    <div class="flex items-center">
-                        <span class="px-2 py-1 text-xs font-semibold rounded-full ${statusColors[machine.status]}">
-                            ${statusTexts[machine.status]}
-                        </span>
-                    </div>
+                    <span class="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${statusTheme.badge}">
+                        <span class="h-2.5 w-2.5 rounded-full ${statusTheme.dot}"></span>
+                        ${statusTexts[machine.status]}
+                    </span>
                 </div>
-                <div class="flex space-x-1">
-                    <button 
+
+                <div class="mt-5 grid grid-cols-2 gap-3">
+                    <div class="rounded-xl border border-gray-100 bg-gray-50/80 p-3 text-gray-700 shadow-sm dark:border-gray-800 dark:bg-gray-800/70 dark:text-gray-200">
+                        <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Débit</p>
+                        <p class="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">${machine.baudRate} baud</p>
+                    </div>
+                    <div class="rounded-xl border border-gray-100 bg-gray-50/80 p-3 text-gray-700 shadow-sm dark:border-gray-800 dark:bg-gray-800/70 dark:text-gray-200">
+                        <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Dernière activité</p>
+                        <p class="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">${this.formatTime(machine.lastSeen)}</p>
+                    </div>
+                    ${machine.uuid ? `
+                    <div class="col-span-2 rounded-xl border border-blue-100 bg-blue-50/80 p-3 shadow-sm dark:border-blue-900 dark:bg-blue-950/40">
+                        <p class="text-xs uppercase tracking-wide font-semibold text-blue-600 dark:text-blue-300">UUID Firmware</p>
+                        <p class="mt-1 text-xs font-mono text-blue-900 dark:text-blue-200 break-all">${machine.uuid}</p>
+                    </div>
+                    ` : ''}
+                </div>
+
+                <div class="flex-1"></div>
+
+                <div class="mt-6 flex items-center justify-end gap-2">
+                    <button
                         onclick="machineManager.showModal('${machine.id}')"
-                        class="p-1 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                        class="inline-flex items-center gap-2 rounded-xl border border-gray-200/70 px-3 py-2 text-xs font-medium text-gray-600 transition-colors duration-200 hover:border-blue-200 hover:text-blue-600 dark:border-gray-700 dark:text-gray-300 dark:hover:border-blue-700 dark:hover:text-blue-300"
                         title="Paramètres"
                     >
-                        <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 01.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                         </svg>
                     </button>
                     ${machine.status === 'ready' ? `
-                    <button 
+                    <button
                         onclick="machineManager.showConsoleModal('${machine.id}')"
-                        class="p-1 text-gray-500 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
+                        class="inline-flex items-center gap-2 rounded-xl border border-gray-200/70 px-3 py-2 text-xs font-medium text-gray-600 transition-colors duration-200 hover:border-green-200 hover:text-green-600 dark:border-gray-700 dark:text-gray-300 dark:hover:border-green-700 dark:hover:text-green-300"
                         title="Console Serial"
                     >
-                        <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                         </svg>
                     </button>
                     ` : ''}
-                    <button 
+                    <button
                         onclick="machineManager.removeMachine('${machine.id}')"
-                        class="p-1 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                        class="inline-flex items-center gap-2 rounded-xl border border-gray-200/70 px-3 py-2 text-xs font-medium text-gray-600 transition-colors duration-200 hover:border-red-200 hover:text-red-600 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-700 dark:hover:text-red-300"
                         title="Supprimer"
                     >
-                        <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                         </svg>
                     </button>
                 </div>
-            </div>
 
-            <div class="space-y-2">
-                <div class="flex items-center justify-between">
-                    <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Activité:</span>
-                    <span class="text-xs text-gray-500 dark:text-gray-400">${this.formatTime(machine.lastSeen)}</span>
-                </div>
-                
-                ${machine.uuid ? `
-                <div class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-800">
-                    <div class="bg-gray-100 dark:bg-gray-900 rounded-lg px-2 py-1.5">
-                        <div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">UUID Firmware</div>
-                        <div class="text-xs font-mono text-gray-800 dark:text-gray-200 break-all">${machine.uuid}</div>
+                ${machine.status === 'ready' ? `
+                    <div class="mt-6 pt-4 border-t border-gray-200/70 dark:border-gray-800/70">
+                        <div class="flex gap-2">
+                            <button
+                                onclick="machineManager.disconnectMachine('${machine.id}')"
+                                class="flex-1 btn-secondary text-xs py-2 rounded-xl"
+                            >
+                                Déconnecter
+                            </button>
+                            <button class="flex-1 btn-primary text-xs py-2 rounded-xl">
+                                Contrôler
+                            </button>
+                        </div>
                     </div>
-                </div>
+                ` : machine.status === 'disconnected' ? `
+                    <div class="mt-6 pt-4 border-t border-gray-200/70 dark:border-gray-800/70">
+                        <button
+                            onclick="machineManager.${machine.needsAuthorization ? 'authorizeAndConnect' : 'connectExistingMachine'}('${machine.id}')"
+                            class="w-full btn-primary text-xs py-2 rounded-xl"
+                        >
+                            ${machine.needsAuthorization ? 'Autoriser le port' : 'Connecter'}
+                        </button>
+                    </div>
+                ` : machine.status === 'connecting' || machine.status === 'retrieving' ? `
+                    <div class="mt-6 pt-4 border-t border-gray-200/70 dark:border-gray-800/70">
+                        <div class="w-full text-center text-xs py-2 text-gray-500 dark:text-gray-400">
+                            ${machine.status === 'connecting' ? 'Connexion en cours...' : 'Récupération des informations...'}
+                        </div>
+                    </div>
+                ` : machine.status === 'error' ? `
+                    <div class="mt-6 pt-4 border-t border-gray-200/70 dark:border-gray-800/70">
+                        <button
+                            onclick="machineManager.${machine.lastError === 'NotAllowedError' ? 'authorizeAndConnect' : 'connectExistingMachine'}('${machine.id}')"
+                            class="w-full btn-primary text-xs py-2 rounded-xl"
+                        >
+                            ${machine.lastError === 'NotAllowedError' ? 'Autoriser le port' : 'Réessayer'}
+                        </button>
+                    </div>
                 ` : ''}
             </div>
-
-            ${machine.status === 'ready' ? `
-                <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-800">
-                    <div class="flex space-x-2">
-                        <button 
-                            onclick="machineManager.disconnectMachine('${machine.id}')"
-                            class="flex-1 btn-secondary text-xs py-1.5"
-                        >
-                            Déconnecter
-                        </button>
-                        <button class="flex-1 btn-primary text-xs py-1.5">
-                            Contrôler
-                        </button>
-                    </div>
-                </div>
-            ` : machine.status === 'disconnected' ? `
-                <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-800">
-                    <button 
-                        onclick="machineManager.${machine.needsAuthorization ? 'authorizeAndConnect' : 'connectExistingMachine'}('${machine.id}')"
-                        class="w-full btn-primary text-xs py-1.5"
-                    >
-                        ${machine.needsAuthorization ? 'Autoriser le port' : 'Connecter'}
-                    </button>
-                </div>
-            ` : machine.status === 'connecting' || machine.status === 'retrieving' ? `
-                <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-800">
-                    <div class="w-full text-center text-xs py-1.5 text-gray-500 dark:text-gray-400">
-                        ${machine.status === 'connecting' ? 'Connexion en cours...' : 'Récupération des informations...'}
-                    </div>
-                </div>
-            ` : machine.status === 'error' ? `
-                <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-800">
-                    <button 
-                        onclick="machineManager.${machine.lastError === 'NotAllowedError' ? 'authorizeAndConnect' : 'connectExistingMachine'}('${machine.id}')"
-                        class="w-full btn-primary text-xs py-1.5"
-                    >
-                        ${machine.lastError === 'NotAllowedError' ? 'Autoriser le port' : 'Réessayer'}
-                    </button>
-                </div>
-            ` : ''}
         `;
 
         return tile;
