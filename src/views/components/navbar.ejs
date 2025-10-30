@@ -12,8 +12,46 @@
                 </h1>
             </div>
             
-            <!-- Menu paramètres -->
-            <div class="relative">
+            <!-- Menus de navigation -->
+            <div class="flex items-center space-x-4">
+                <!-- Menu outils -->
+                <div class="relative">
+                    <button 
+                        id="toolsButton" 
+                        class="flex items-center space-x-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+                    >
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7H4a1 1 0 00-1 1v11a1 1 0 001 1h16a1 1 0 001-1V8a1 1 0 00-1-1z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h4M9 11h6M9 14h6"></path>
+                        </svg>
+                        <span>Outils</span>
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                        </svg>
+                    </button>
+                    
+                    <!-- Dropdown menu -->
+                    <div 
+                        id="toolsDropdown" 
+                        class="hidden absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg py-1 z-50 border border-gray-200 dark:border-gray-800 transition-colors duration-200"
+                    >
+                        <a 
+                            href="/tools/mesh-viewer" 
+                            class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        >
+                            <div class="flex items-center">
+                                <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                                </svg>
+                                Mesh viewer
+                            </div>
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- Menu paramètres -->
+                <div class="relative">
                 <button 
                     id="settingsButton" 
                     class="flex items-center space-x-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 px-3 py-2 rounded-md text-sm font-medium transition-colors"
@@ -102,6 +140,7 @@
                             </div>
                         </button>
                     </form>
+                </div>
                 </div>
             </div>
         </div>

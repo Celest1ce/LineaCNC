@@ -12,6 +12,17 @@ class DropdownManager {
     }
 
     bindEvents() {
+        // Gestion du dropdown des outils
+        const toolsButton = document.getElementById('toolsButton');
+        const toolsDropdown = document.getElementById('toolsDropdown');
+
+        if (toolsButton && toolsDropdown) {
+            toolsButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleDropdown(toolsDropdown);
+            });
+        }
+
         // Gestion du dropdown des paramètres
         const settingsButton = document.getElementById('settingsButton');
         const settingsDropdown = document.getElementById('settingsDropdown');
