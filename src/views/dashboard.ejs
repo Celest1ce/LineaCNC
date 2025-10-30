@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %> - LineaCNC</title>
+    <meta name="csrf-token" content="<%= csrfToken %>">
+    <link rel="icon" href="/assets/images/logos/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/notifications.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="min-h-screen bg-gray-50 dark:bg-gray-900 font-sans transition-colors duration-200">
+    <div class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+        <%- include('components/navbar', { user: user }) %>
+        
+        <!-- Contenu principal -->
+        <main class="w-full py-6 px-4 sm:px-6 lg:px-8">
+            <div class="w-full">
+                <% if (error) { %>
+                    <div class="alert-error mb-6">
+                        <div class="flex">
+                            <svg class="h-5 w-5 text-red-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                            </svg>
+                            <%= error %>
+                        </div>
+                    </div>
+                <% } %>
+                
+                <!-- En-tête des machines -->
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">Machines CNC</h2>
+                        <p class="text-gray-600 dark:text-gray-400">Gestion des machines connectées via Web Serial</p>
+                    </div>
+                    <button 
+                        id="addMachineBtn" 
+                        class="btn-primary flex items-center space-x-2"
+                    >
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                        </svg>
+                        <span>Ajouter une machine</span>
+                    </button>
+                </div>
+
+                <!-- Grille des machines -->
+                <div id="machinesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <!-- Les tuiles de machines seront ajoutées dynamiquement ici -->
+                </div>
+
+                <!-- Message quand aucune machine -->
+                <div id="noMachinesMessage" class="text-center py-12 hidden">
+                    <svg class="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                    </svg>
+                    <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">Aucune machine connectée</h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        Cliquez sur "Ajouter une machine" pour commencer.
+                    </p>
+                    <div class="mt-4 p-3 bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-800 rounded-lg">
+                        <p class="text-xs text-blue-700 dark:text-blue-300">
+                            <strong>Note :</strong> L'API Web Serial nécessite HTTPS ou localhost. 
+                            Assurez-vous que votre imprimante est connectée via USB.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal de paramètres de machine -->
+    <div id="machineModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 dark:bg-black dark:bg-opacity-70 overflow-y-auto h-full w-full hidden z-50 transition-colors duration-200">
+        <div class="relative top-20 mx-auto p-5 border border-gray-200 dark:border-gray-800 w-96 shadow-lg rounded-md bg-white dark:bg-gray-800 transition-colors duration-200">
+            <div class="mt-3">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">Modifier les paramètres</h3>
+                    <button id="closeModal" class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300">
+                        <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                
+                <form id="machineForm">
+                    <div class="mb-4">
+                        <label for="machineName" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Nom de la machine</label>
+                        <input 
+                            type="text" 
+                            id="machineName" 
+                            class="input-field" 
+                            placeholder="Nom de la machine"
+                            required
+                        >
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="machineBaudRate" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Vitesse de transmission</label>
+                        <div class="relative">
+                            <input 
+                                type="number" 
+                                id="machineBaudRate" 
+                                placeholder="Saisir ou sélectionner un baudrate" 
+                                min="1200" 
+                                max="20000000" 
+                                step="1200"
+                                value="115200"
+                                class="w-full px-3 py-2 pr-10 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:text-white"
+                            >
+                            <button 
+                                type="button" 
+                                id="baudrateDropdownBtn" 
+                                class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                            >
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            
+                            <!-- Menu déroulant -->
+                            <div id="baudrateDropdown" class="hidden absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                                <!-- Section Standard -->
+                                <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                                    <p class="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Standard</p>
+                                </div>
+                                <div class="py-1">
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="9600">9600 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="19200">19200 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="38400">38400 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="57600">57600 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300" data-baudrate="115200">115200 baud (Recommandé)</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="230400">230400 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="460800">460800 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="921600">921600 baud</button>
+                                </div>
+                                
+                                <!-- Section CNC/3D -->
+                                <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                                    <p class="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">CNC & Imprimantes 3D</p>
+                                </div>
+                                <div class="py-1">
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="250000">250000 baud (Marlin)</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="500000">500000 baud (Klipper)</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="1000000">1000000 baud (Klipper)</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="2000000">2000000 baud (Klipper)</button>
+                                </div>
+                                
+                                <!-- Section Haute Performance -->
+                                <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                                    <p class="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Haute Performance</p>
+                                </div>
+                                <div class="py-1">
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="4000000">4000000 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="8000000">8000000 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="12000000">12000000 baud</button>
+                                    <button type="button" class="baudrate-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700" data-baudrate="20000000">20000000 baud</button>
+                                </div>
+                                
+                                <!-- Section Personnalisé -->
+                                <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700">
+                                    <p class="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Personnalisé</p>
+                                </div>
+                                <div class="p-3 border-t border-gray-200 dark:border-gray-600">
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Saisissez librement dans le champ ci-dessus</p>
+                                    <p class="text-xs text-gray-400 dark:text-gray-500">Valeurs acceptées : 1200 - 20000000</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex justify-end space-x-3">
+                        <button 
+                            type="button" 
+                            id="cancelBtn" 
+                            class="btn-secondary"
+                        >
+                            Annuler
+                        </button>
+                        <button 
+                            type="submit" 
+                            class="btn-primary"
+                        >
+                            Sauvegarder
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Console Serial -->
+    <div id="consoleModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 dark:bg-black dark:bg-opacity-70 overflow-y-auto h-full w-full hidden z-50 transition-colors duration-200">
+        <div class="relative top-20 mx-auto p-5 border border-gray-200 dark:border-gray-800 w-full max-w-4xl shadow-lg rounded-md bg-white dark:bg-gray-800 transition-colors duration-200">
+            <div class="mt-3">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">Console Serial</h3>
+                    <button id="closeConsoleModal" class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300">
+                        <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                
+                <!-- Zone de logs -->
+                <div id="consoleOutput" class="bg-gray-900 text-green-400 font-mono text-sm p-4 rounded-lg h-96 overflow-y-auto mb-4">
+                    <div class="text-gray-500">Console ouverte. En attente de données...</div>
+                </div>
+                
+                <!-- Zone de saisie -->
+                <div class="flex space-x-2">
+                    <input 
+                        type="text" 
+                        id="consoleInput" 
+                        class="flex-1 input-field font-mono" 
+                        placeholder="Entrez une commande (Ctrl+Enter pour envoyer)"
+                    >
+                    <button 
+                        id="sendConsoleBtn" 
+                        class="btn-primary"
+                    >
+                        Envoyer
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                    Ctrl+Enter pour envoyer • Les données entrantes s'affichent automatiquement
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts séparés pour une meilleure organisation -->
+    <script src="/js/config.js"></script>
+    <script src="/js/utils/notification.js"></script>
+    <script src="/js/utils/theme-manager.js"></script>
+    <script src="/js/components/dropdown-manager.js"></script>
+    <script src="/js/views/machine-tile-view.js"></script>
+    <script src="/js/views/machine-manager-view.js"></script>
+    <script src="/js/components/machine-manager.js"></script>
+    <script src="/js/pages/dashboard.js"></script>
+    
+    <script src="/js/main.js"></script>
+    
+    <style>
+        /* Styles pour le dropdown de baudrate */
+        .baudrate-option {
+            transition: all 0.15s ease;
+        }
+        
+        .baudrate-option:hover {
+            background-color: #f3f4f6;
+        }
+        
+        .dark .baudrate-option:hover {
+            background-color: #374151;
+        }
+        
+        .baudrate-option:active {
+            background-color: #e5e7eb;
+        }
+        
+        .dark .baudrate-option:active {
+            background-color: #4b5563;
+        }
+        
+        /* Animation du dropdown */
+        #baudrateDropdown {
+            transition: all 0.2s ease;
+        }
+        
+        #baudrateDropdown.show {
+            display: block !important;
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        #baudrateDropdown.hidden {
+            display: none !important;
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        
+        /* Style pour l'option recommandée */
+        .baudrate-option[data-baudrate="115200"] {
+            font-weight: 500;
+        }
+    </style>
+</body>
+</html>
