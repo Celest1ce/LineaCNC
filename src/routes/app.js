@@ -45,7 +45,20 @@ router.get('/account', requireAuth, (req, res) => {
     success: req.session.success || null,
     error: req.session.error || null
   });
-  
+
+  delete req.session.success;
+  delete req.session.error;
+});
+
+// Outil Mesh Viewer
+router.get('/tools/mesh-viewer', requireAuth, (req, res) => {
+  res.render('tools/mesh-viewer', {
+    title: 'Mesh Viewer',
+    user: req.session.user,
+    success: req.session.success || null,
+    error: req.session.error || null
+  });
+
   delete req.session.success;
   delete req.session.error;
 });

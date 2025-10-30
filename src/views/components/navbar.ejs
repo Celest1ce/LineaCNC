@@ -11,13 +11,108 @@
                     Bonjour, <%= user.pseudo %>
                 </h1>
             </div>
-            
+
             <!-- Menu paramètres -->
-            <div class="relative">
-                <button 
-                    id="settingsButton" 
-                    class="flex items-center space-x-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 px-3 py-2 rounded-md text-sm font-medium transition-colors"
-                >
+            <div class="flex items-center space-x-4">
+                <!-- Menu outils -->
+                <div class="relative">
+                    <button
+                        id="toolsButton"
+                        class="flex items-center space-x-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+                    >
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 1.343-3 3 0 1.275.8 2.365 1.923 2.79l-.423 2.54a1 1 0 001.235 1.132l1.85-.463a4.001 4.001 0 004.004-1.572l.467-.7a1 1 0 011.396-.278l1.19.793a1 1 0 001.478-1.24l-1.038-2.076a1 1 0 00-.894-.553l-2.357-.07a3.996 3.996 0 00-2.26-2.7l.42-1.68a1 1 0 00-.97-1.24H12z" />
+                        </svg>
+                        <span>Outils</span>
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                        </svg>
+                    </button>
+
+                    <div
+                        id="toolsDropdown"
+                        class="hidden absolute right-0 mt-2 w-[28rem] max-h-[28rem] overflow-y-auto bg-white dark:bg-gray-800 rounded-lg shadow-lg py-4 z-50 border border-gray-200 dark:border-gray-800 transition-colors duration-200"
+                    >
+                        <div class="px-5 pb-4 border-b border-gray-200 dark:border-gray-700">
+                            <div class="flex justify-between items-center mb-4">
+                                <a
+                                    href="/tools/mesh-viewer"
+                                    class="inline-flex items-center px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors"
+                                >
+                                    <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M3 12h18M3 17h18"></path>
+                                    </svg>
+                                    Ouvrir l'outil
+                                </a>
+                                <p class="text-[11px] text-gray-500 dark:text-gray-400">Ctrl+Alt+M</p>
+                            </div>
+                            <div class="flex items-start justify-between">
+                                <div>
+                                    <p class="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Outil avancé</p>
+                                    <h2 class="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">Mesh Viewer</h2>
+                                </div>
+                                <span class="inline-flex items-center px-2 py-1 text-[10px] font-medium rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">WebGL 2D/3D</span>
+                            </div>
+                            <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                                Un outil dédié à la visualisation, l’édition et la correction de maillages rectilignes représentant des hauteurs, pensé pour un flux de travail complet du chargement à l’export.
+                            </p>
+                        </div>
+
+                        <div class="px-5 py-4 space-y-5 text-sm text-gray-700 dark:text-gray-200">
+                            <section class="space-y-2">
+                                <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Fonctionnalités principales</h3>
+                                <ul class="space-y-2 list-disc list-inside">
+                                    <li><span class="font-medium">Importation multi-formats :</span> dialogue d’import accessible par clic, raccourci clavier ou glisser-déposer, compatible CSV, TXT et JSON, avec prise en charge du collage G29/G81 issu de Pronterface et masquage des points manquants.</li>
+                                    <li><span class="font-medium">Édition interactive 2D :</span> heatmap éditable, peinture ou effacement de cellules, statistiques en direct et visualisation des valeurs imputées.</li>
+                                    <li><span class="font-medium">Rendu 3D WebGL :</span> moteur WebGL2 synchronisé avec zoom orbital, réglage de l’échelle Z, lissage ajustable et palette partagée avec la heatmap.</li>
+                                    <li><span class="font-medium">Corrections automatiques :</span> module médian pour détecter, interpoler et prévisualiser les corrections avec historique undo/redo.</li>
+                                    <li><span class="font-medium">Export et statistiques :</span> exports CSV ou JSON enrichis de métadonnées et pied de page détaillant taille, plage, moyenne, médiane et points imputés.</li>
+                                    <li><span class="font-medium">Personnalisation persistante :</span> thèmes, palettes, amplification Z et lissage mémorisés pour une reprise instantanée.</li>
+                                </ul>
+                            </section>
+
+                            <section class="space-y-2">
+                                <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Parcours utilisateur type</h3>
+                                <ol class="space-y-2 list-decimal list-inside">
+                                    <li><span class="font-medium">Chargement des données :</span> panneau « Données » avec import de fichiers ou collage Pronterface, validation automatique et génération du masque.</li>
+                                    <li><span class="font-medium">Analyse &amp; correction :</span> statistiques instantanées, alertes sur valeurs manquantes et corrections médianes avec aperçu et historique.</li>
+                                    <li><span class="font-medium">Édition manuelle :</span> heatmap éditable via clavier, clic prolongé ou glisser pour peindre, synchronisée avec le rendu 3D.</li>
+                                    <li><span class="font-medium">Visualisation 3D :</span> réglages d’angles, de lissage et d’échelle Z avec retour immédiat dans le moteur WebGL.</li>
+                                    <li><span class="font-medium">Export &amp; sauvegarde :</span> génération d’exports CSV/JSON et conservation des préférences utilisateur.</li>
+                                </ol>
+                            </section>
+
+                            <section class="space-y-2">
+                                <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Architecture technique</h3>
+                                <ul class="space-y-2 list-disc list-inside">
+                                    <li><span class="font-medium">Modèle de données :</span> <span class="font-semibold">MeshModel</span> gère dimensions, masque d’imputation, snapshots et historique limité à 100 entrées.</li>
+                                    <li><span class="font-medium">Parsers :</span> <span class="font-semibold">parseMesh</span> pour CSV/TXT/JSON avec cohérence dimensionnelle, <span class="font-semibold">parsePronterfaceMesh</span> pour grilles G-code et gestion des NaN.</li>
+                                    <li><span class="font-medium">Vue 2D :</span> <span class="font-semibold">HeatmapView</span> associe canevas et grille HTML pour l’édition et le suivi des statistiques.</li>
+                                    <li><span class="font-medium">Rendu 3D :</span> <span class="font-semibold">MeshRenderer</span> orchestre buffers WebGL2, lissage et caméra orbitale.</li>
+                                    <li><span class="font-medium">Couleurs &amp; stats :</span> <span class="font-semibold">ColorScale</span> et <span class="font-semibold">computeStats</span> calibrent palettes et indicateurs en temps réel.</li>
+                                </ul>
+                            </section>
+
+                            <section class="space-y-2">
+                                <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Wireframe textuel</h3>
+                                <p class="text-sm">Application en deux colonnes : panneaux de contrôle empilés à gauche, zone de travail à droite avec heatmap, relief 3D et pied de page statistique.</p>
+                                <ul class="space-y-2 list-disc list-inside">
+                                    <li><span class="font-medium">Panneau latéral :</span> cartes repliables pour Données, Corrections, Peinture et Affichage.</li>
+                                    <li><span class="font-medium">Carte Heatmap :</span> canevas carré avec message d’état et HUD XY.</li>
+                                    <li><span class="font-medium">Carte 3D :</span> barre d’actions, panneau coulissant des paramètres et HUD XYZ.</li>
+                                    <li><span class="font-medium">Modales &amp; toasts :</span> dialogues centrés et notifications bas droite pour le suivi des actions.</li>
+                                    <li><span class="font-medium">Palette colorimétrique :</span> thèmes clair/sombre, couleurs d’accent et codes d’axes harmonisés.</li>
+                                </ul>
+                            </section>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="relative">
+                    <button
+                        id="settingsButton"
+                        class="flex items-center space-x-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+                    >
                     <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
@@ -29,8 +124,8 @@
                 </button>
                 
                 <!-- Dropdown menu -->
-                <div 
-                    id="settingsDropdown" 
+                <div
+                    id="settingsDropdown"
                     class="hidden absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg py-1 z-50 border border-gray-200 dark:border-gray-800 transition-colors duration-200"
                 >
                     <a 
@@ -102,6 +197,7 @@
                             </div>
                         </button>
                     </form>
+                </div>
                 </div>
             </div>
         </div>

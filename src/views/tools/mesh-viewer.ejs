@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %> - LineaCNC</title>
+    <meta name="csrf-token" content="<%= csrfToken %>">
+    <link rel="icon" href="/assets/images/logos/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/notifications.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="min-h-screen bg-gray-50 dark:bg-gray-900 font-sans transition-colors duration-200" data-page="mesh-viewer">
+    <div class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+        <%- include('../components/navbar', { user: user }) %>
+
+        <main class="w-full py-6 px-4 sm:px-6 lg:px-8">
+            <div class="max-w-7xl mx-auto space-y-6">
+                <% if (success) { %>
+                    <div class="alert-success">
+                        <div class="flex items-center">
+                            <svg class="h-5 w-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-7.5 7.5a1 1 0 01-1.414 0l-3-3a1 1 0 011.414-1.414L8.5 12.086l6.793-6.793a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                            </svg>
+                            <%= success %>
+                        </div>
+                    </div>
+                <% } %>
+
+                <% if (error) { %>
+                    <div class="alert-error">
+                        <div class="flex items-center">
+                            <svg class="h-5 w-5 text-red-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                            </svg>
+                            <%= error %>
+                        </div>
+                    </div>
+                <% } %>
+
+                <div class="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-6 items-start">
+                    <!-- Panneau latéral -->
+                    <aside class="space-y-4">
+                        <header class="card p-5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm">
+                            <p class="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Outil LineaCNC</p>
+                            <h1 class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">Mesh Viewer</h1>
+                            <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                                Visualisez, corrigez et exportez vos maillages rectilignes en combinant édition 2D et rendu 3D WebGL.
+                            </p>
+                            <div class="mt-4 flex flex-wrap gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                <span class="px-2 py-1 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300">WebGL2</span>
+                                <span class="px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-800">Undo/Redo</span>
+                                <span class="px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-800">Import CSV/JSON/TXT</span>
+                            </div>
+                        </header>
+
+                        <section class="card bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm" data-panel="data">
+                            <button class="w-full flex items-center justify-between px-5 py-4" data-collapse-trigger>
+                                <div>
+                                    <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Données</h2>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">Import, collage et structure du maillage</p>
+                                </div>
+                                <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            <div class="px-5 pb-5 space-y-4" data-collapse-content>
+                                <div class="space-y-2">
+                                    <button id="openFileBtn" class="btn-primary w-full flex items-center justify-center gap-2">
+                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                        </svg>
+                                        Importer un fichier
+                                    </button>
+                                    <button id="openPronterfaceBtn" class="btn-secondary w-full flex items-center justify-center gap-2">
+                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h13M8 12h13M8 17h13M3 7h.01M3 12h.01M3 17h.01"></path>
+                                        </svg>
+                                        Coller G29 / G81
+                                    </button>
+                                    <div class="border border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-4 text-center text-xs text-gray-500 dark:text-gray-400" id="dropZone">
+                                        Glissez-déposez vos fichiers ici ou utilisez <span class="font-semibold">Ctrl+O</span>
+                                    </div>
+                                    <input type="file" id="fileInput" accept=".csv,.txt,.json" class="hidden" multiple>
+                                </div>
+
+                                <div class="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-4 text-xs text-gray-600 dark:text-gray-300 space-y-2" id="meshMetadata">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-500 dark:text-gray-400">Dimensions</span>
+                                        <span id="meshDimensions" class="font-medium text-gray-900 dark:text-gray-100">-</span>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-500 dark:text-gray-400">Points manquants</span>
+                                        <span id="meshMissing" class="font-medium text-amber-600 dark:text-amber-400">-</span>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-500 dark:text-gray-400">Sources</span>
+                                        <span id="meshSource" class="font-medium text-gray-900 dark:text-gray-100">-</span>
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                                    <span>Historique</span>
+                                    <div class="space-x-2">
+                                        <button id="undoBtn" class="px-2 py-1 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">Undo</button>
+                                        <button id="redoBtn" class="px-2 py-1 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">Redo</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="card bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm" data-panel="corrections">
+                            <button class="w-full flex items-center justify-between px-5 py-4" data-collapse-trigger>
+                                <div>
+                                    <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Corrections</h2>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">Détection et interpolation des valeurs manquantes</p>
+                                </div>
+                                <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            <div class="px-5 pb-5 space-y-4" data-collapse-content>
+                                <div class="space-y-2">
+                                    <button id="previewCorrectionBtn" class="w-full btn-secondary flex items-center justify-center gap-2">
+                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 1.343-3 3 0 1.275.8 2.365 1.923 2.79l-.423 2.54a1 1 0 001.235 1.132l1.85-.463a4.001 4.001 0 004.004-1.572l.467-.7a1 1 0 011.396-.278l1.19.793a1 1 0 001.478-1.24l-1.038-2.076a1 1 0 00-.894-.553l-2.357-.07a3.996 3.996 0 00-2.26-2.7l.42-1.68a1 1 0 00-.97-1.24H12z" />
+                                        </svg>
+                                        Prévisualiser la correction médiane
+                                    </button>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <button id="applyCorrectionBtn" class="px-3 py-2 text-xs rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Appliquer</button>
+                                        <button id="cancelCorrectionBtn" class="px-3 py-2 text-xs rounded-lg bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Annuler</button>
+                                    </div>
+                                </div>
+                                <div class="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-xs text-blue-700 dark:text-blue-200 space-y-1">
+                                    <p><strong>Astuce :</strong> Les valeurs corrigées apparaissent en turquoise avant validation.</p>
+                                    <p>Utilisez l'historique pour annuler si nécessaire.</p>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="card bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm" data-panel="painting">
+                            <button class="w-full flex items-center justify-between px-5 py-4" data-collapse-trigger>
+                                <div>
+                                    <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Peinture</h2>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">Modification manuelle cellule par cellule</p>
+                                </div>
+                                <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            <div class="px-5 pb-5 space-y-4" data-collapse-content>
+                                <div class="space-y-3 text-xs text-gray-500 dark:text-gray-300">
+                                    <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Valeur de peinture</label>
+                                    <div class="flex items-center gap-2">
+                                        <input id="paintValueInput" type="number" step="0.01" class="input-field" placeholder="Valeur à appliquer">
+                                        <button id="pickFromSelection" class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800">Pipette</button>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <label class="flex items-center gap-2">
+                                            <input type="radio" name="paintMode" value="paint" class="paint-mode" checked>
+                                            <span>Peindre</span>
+                                        </label>
+                                        <label class="flex items-center gap-2">
+                                            <input type="radio" name="paintMode" value="erase" class="paint-mode">
+                                            <span>Effacer (valeur manquante)</span>
+                                        </label>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <label class="text-xs uppercase tracking-wider font-semibold">Taille du pinceau</label>
+                                        <input id="brushSizeInput" type="range" min="1" max="5" value="1" class="w-32">
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2 text-xs">
+                                    <button id="fillMissingBtn" class="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">Remplir les manquants</button>
+                                    <button id="clearSelectionBtn" class="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">Réinitialiser la sélection</button>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="card bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm" data-panel="display">
+                            <button class="w-full flex items-center justify-between px-5 py-4" data-collapse-trigger>
+                                <div>
+                                    <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Affichage</h2>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">Palette, lissage et paramètres 3D</p>
+                                </div>
+                                <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            <div class="px-5 pb-5 space-y-4" data-collapse-content>
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-2">Palette colorimétrique</label>
+                                    <div id="paletteList" class="grid grid-cols-2 gap-2 text-xs"></div>
+                                </div>
+                                <div class="space-y-2 text-xs text-gray-500 dark:text-gray-300">
+                                    <div class="flex items-center justify-between">
+                                        <span class="uppercase tracking-wider font-semibold text-gray-700 dark:text-gray-300">Échelle Z</span>
+                                        <span id="zScaleValue" class="font-medium text-gray-900 dark:text-gray-100">1x</span>
+                                    </div>
+                                    <input id="zScaleInput" type="range" min="0.5" max="4" step="0.1" value="1" class="w-full">
+                                    <div class="flex items-center justify-between">
+                                        <span class="uppercase tracking-wider font-semibold text-gray-700 dark:text-gray-300">Lissage</span>
+                                        <span id="smoothingValue" class="font-medium text-gray-900 dark:text-gray-100">0</span>
+                                    </div>
+                                    <input id="smoothingInput" type="range" min="0" max="5" step="1" value="0" class="w-full">
+                                    <label class="flex items-center gap-2 mt-2">
+                                        <input type="checkbox" id="toggleImputedOverlay" checked>
+                                        <span>Afficher les cellules imputées/manquantes</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </section>
+
+                        <footer class="card bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm p-5 text-xs text-gray-500 dark:text-gray-400 space-y-2">
+                            <div class="flex justify-between">
+                                <span>Export</span>
+                                <div class="space-x-2">
+                                    <button id="exportCsvBtn" class="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">CSV</button>
+                                    <button id="exportJsonBtn" class="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">JSON</button>
+                                </div>
+                            </div>
+                            <p class="text-[11px]">Les exports incluent dimensions, offset et statut des cellules imputées.</p>
+                        </footer>
+                    </aside>
+
+                    <!-- Zone principale -->
+                    <section class="space-y-6">
+                        <article class="card bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm">
+                            <header class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800">
+                                <div>
+                                    <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Heatmap 2D</h2>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400">Peignez vos cellules, visualisez les données et suivez les imputations en temps réel.</p>
+                                </div>
+                                <div class="flex items-center gap-2 text-xs">
+                                    <button id="toggleGridBtn" class="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">Grille</button>
+                                    <button id="toggleStatisticsBtn" class="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">Statistiques</button>
+                                </div>
+                            </header>
+                            <div class="px-6 py-6 relative">
+                                <div id="heatmapContainer" class="relative aspect-square bg-gray-100 dark:bg-gray-800 rounded-xl overflow-hidden shadow-inner">
+                                    <canvas id="heatmapCanvas" class="w-full h-full"></canvas>
+                                    <div id="heatmapHud" class="absolute bottom-3 left-3 px-2 py-1 rounded bg-black/60 text-white text-[10px] tracking-widest uppercase">XY</div>
+                                    <div id="heatmapEmptyState" class="absolute inset-0 flex flex-col items-center justify-center text-center text-sm text-gray-500 dark:text-gray-400">
+                                        <svg class="h-12 w-12 mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.341A8 8 0 018.659 4.572M16 5v0a4 4 0 11-5 5m1 5l-7 7"></path>
+                                        </svg>
+                                        <p>Aucune donnée chargée</p>
+                                        <p class="text-xs mt-1">Importez un fichier ou collez vos valeurs pour commencer.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <footer id="statisticsPanel" class="border-t border-gray-200 dark:border-gray-800 px-6 py-4 bg-gray-50 dark:bg-gray-900/60 grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                                <div>
+                                    <p class="text-gray-500 dark:text-gray-400">Min</p>
+                                    <p id="statMin" class="text-sm font-semibold text-gray-900 dark:text-gray-100">-</p>
+                                </div>
+                                <div>
+                                    <p class="text-gray-500 dark:text-gray-400">Max</p>
+                                    <p id="statMax" class="text-sm font-semibold text-gray-900 dark:text-gray-100">-</p>
+                                </div>
+                                <div>
+                                    <p class="text-gray-500 dark:text-gray-400">Moyenne</p>
+                                    <p id="statMean" class="text-sm font-semibold text-gray-900 dark:text-gray-100">-</p>
+                                </div>
+                                <div>
+                                    <p class="text-gray-500 dark:text-gray-400">Médiane</p>
+                                    <p id="statMedian" class="text-sm font-semibold text-gray-900 dark:text-gray-100">-</p>
+                                </div>
+                                <div>
+                                    <p class="text-gray-500 dark:text-gray-400">Écart-type</p>
+                                    <p id="statStd" class="text-sm font-semibold text-gray-900 dark:text-gray-100">-</p>
+                                </div>
+                                <div>
+                                    <p class="text-gray-500 dark:text-gray-400">Imputés / Manquants</p>
+                                    <p id="statImputed" class="text-sm font-semibold text-gray-900 dark:text-gray-100">-</p>
+                                </div>
+                            </footer>
+                        </article>
+
+                        <article class="card bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm">
+                            <header class="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-gray-200 dark:border-gray-800">
+                                <div>
+                                    <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Relief 3D WebGL</h2>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400">Explorez votre maillage avec rotation orbitale, zoom et paramètres synchronisés.</p>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2 text-xs">
+                                    <button id="resetCameraBtn" class="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">Réinitialiser</button>
+                                    <button id="topCameraBtn" class="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">Vue dessus</button>
+                                    <button id="isoCameraBtn" class="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">Isométrique</button>
+                                </div>
+                            </header>
+                            <div class="flex flex-col lg:flex-row">
+                                <div class="relative flex-1 min-h-[22rem] bg-gray-950">
+                                    <canvas id="meshCanvas" class="absolute inset-0 w-full h-full"></canvas>
+                                    <div id="meshHud" class="absolute bottom-3 left-3 px-3 py-1 rounded-lg bg-black/60 text-white text-[11px] tracking-widest uppercase">XYZ</div>
+                                </div>
+                                <aside class="w-full lg:w-72 border-t lg:border-l border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/60 px-6 py-4 space-y-4 text-xs text-gray-500 dark:text-gray-300">
+                                    <div>
+                                        <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">Caméra</h3>
+                                        <p id="cameraInfo" class="mt-1 text-[11px]">Distance: -, Azimut: -, Élévation: -</p>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">Buffers</h3>
+                                        <ul class="space-y-1" id="bufferInfo">
+                                            <li>Vertices: -</li>
+                                            <li>Triangles: -</li>
+                                        </ul>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">Paramètres</h3>
+                                        <label class="flex items-center justify-between mb-2">
+                                            <span>Qualité lissage</span>
+                                            <select id="smoothingKernel" class="px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-xs">
+                                                <option value="gaussian">Gaussien</option>
+                                                <option value="median">Median</option>
+                                                <option value="none">Aucun</option>
+                                            </select>
+                                        </label>
+                                        <label class="flex items-center justify-between">
+                                            <span>Palette 3D</span>
+                                            <select id="rendererPalette" class="px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-xs">
+                                                <option value="sync">Synchronisée</option>
+                                                <option value="sunset">Sunset</option>
+                                                <option value="ice">Ice</option>
+                                                <option value="forest">Forest</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                </aside>
+                            </div>
+                        </article>
+
+                        <footer class="card bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm px-6 py-4 text-xs text-gray-500 dark:text-gray-400 flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <p class="font-semibold text-gray-700 dark:text-gray-300">Pied de page statistiques</p>
+                                <p id="footerStats" class="text-[11px]">Aucune donnée.</p>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-3">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" id="toggleAutoSave">
+                                    <span>Sauvegarde auto préférences</span>
+                                </label>
+                                <button id="clearPreferencesBtn" class="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">Réinitialiser préférences</button>
+                            </div>
+                        </footer>
+                    </section>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modale import fichier -->
+    <div id="fileImportModal" class="fixed inset-0 bg-black/60 z-50 hidden items-center justify-center px-4">
+        <div class="card bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl max-w-lg w-full p-6 space-y-4">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Importer un fichier</h3>
+                <button class="close-modal text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" data-target="fileImportModal">
+                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <p class="text-sm text-gray-600 dark:text-gray-300">Sélectionnez un fichier CSV, TXT ou JSON. Les fichiers CSV/TXT doivent représenter une matrice rectangulaire.</p>
+            <div class="bg-gray-50 dark:bg-gray-800/60 border border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-6 text-center text-sm text-gray-500 dark:text-gray-300">
+                <p>Glissez le fichier dans cette fenêtre ou utilisez le bouton ci-dessous.</p>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button class="close-modal btn-secondary" data-target="fileImportModal">Annuler</button>
+                <button id="confirmImportBtn" class="btn-primary">Choisir un fichier</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale import Pronterface -->
+    <div id="pronterfaceModal" class="fixed inset-0 bg-black/60 z-50 hidden items-center justify-center px-4">
+        <div class="card bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl max-w-2xl w-full p-6 space-y-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Coller un rapport Pronterface</h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Les colonnes G29/G81 seront détectées automatiquement. Les points manquants seront masqués.</p>
+                </div>
+                <button class="close-modal text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" data-target="pronterfaceModal">
+                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <textarea id="pronterfaceInput" class="input-field h-56 font-mono text-xs" placeholder="Collez ici le tableau G29/G81..."></textarea>
+            <div class="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
+                <label class="flex items-center gap-2">
+                    <input type="checkbox" id="pronterfaceTranspose">
+                    <span>Transposer la grille</span>
+                </label>
+                <div class="space-x-2">
+                    <button class="close-modal px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800" data-target="pronterfaceModal">Annuler</button>
+                    <button id="parsePronterfaceBtn" class="btn-primary">Construire le maillage</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale d'export -->
+    <div id="exportModal" class="fixed inset-0 bg-black/60 z-50 hidden items-center justify-center px-4">
+        <div class="card bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl max-w-md w-full p-6 space-y-4">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Export du maillage</h3>
+                <button class="close-modal text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" data-target="exportModal">
+                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <p class="text-sm text-gray-600 dark:text-gray-300">Choisissez le format d'export. Les métadonnées incluent dimensions, palette active, paramètres de correction et historique.</p>
+            <div class="grid grid-cols-2 gap-3 text-sm">
+                <button id="modalExportCsv" class="px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">Exporter CSV</button>
+                <button id="modalExportJson" class="px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">Exporter JSON</button>
+            </div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">
+                <p>Les valeurs imputées sont marquées. Les NaN sont conservés lors de l'export CSV.</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/config.js"></script>
+    <script src="/js/utils/notification.js"></script>
+    <script src="/js/utils/theme-manager.js"></script>
+    <script src="/js/components/dropdown-manager.js"></script>
+    <script src="/js/tools/mesh-viewer/color-scale.js"></script>
+    <script src="/js/tools/mesh-viewer/stats.js"></script>
+    <script src="/js/tools/mesh-viewer/parsers.js"></script>
+    <script src="/js/tools/mesh-viewer/model.js"></script>
+    <script src="/js/tools/mesh-viewer/heatmap.js"></script>
+    <script src="/js/tools/mesh-viewer/renderer.js"></script>
+    <script src="/js/tools/mesh-viewer/ui.js"></script>
+    <script src="/js/pages/mesh-viewer.js"></script>
+    <script src="/js/main.js"></script>
+
+    <style>
+        #fileImportModal.show,
+        #pronterfaceModal.show,
+        #exportModal.show {
+            display: flex;
+        }
+
+        #heatmapCanvas {
+            image-rendering: pixelated;
+        }
+
+        .palette-option {
+            border-radius: 0.75rem;
+            padding: 0.4rem 0.6rem;
+            border: 1px solid rgba(148, 163, 184, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .palette-option:hover {
+            border-color: rgba(59, 130, 246, 0.6);
+        }
+
+        .palette-option.active {
+            border-color: rgb(59 130 246);
+            box-shadow: 0 0 0 1px rgb(59 130 246 / 60%);
+        }
+
+        .palette-swatch {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 2px;
+            flex: 1;
+            border-radius: 9999px;
+            overflow: hidden;
+        }
+
+        .palette-swatch span {
+            height: 12px;
+        }
+    </style>
+</body>
+</html>
