@@ -17,11 +17,11 @@ class MachineManager {
             return token ? { 'X-CSRF-Token': token } : {};
         };
         if (typeof MachineTileView !== 'undefined') {
-            this.view = new MachineTileView({
+            this.tileView = new MachineTileView({
                 containerId: 'machinesGrid',
                 emptyStateId: 'noMachinesMessage'
             });
-            this.view.setCallbacks({
+            this.tileView.setCallbacks({
                 onEdit: (machineId) => this.showModal(machineId),
                 onOpenConsole: (machineId) => this.showConsoleModal(machineId),
                 onDelete: (machineId) => this.removeMachine(machineId),
@@ -32,187 +32,60 @@ class MachineManager {
             });
         } else {
             console.warn('MachineTileView non disponible - affichage des tuiles désactivé');
-            this.view = null;
+            this.tileView = null;
+        }
+
+        if (typeof MachineManagerView !== 'undefined') {
+            this.managerView = new MachineManagerView();
+            this.managerView.setCallbacks({
+                onRequestAddMachine: () => this.addMachine(),
+                onMachineFormSubmit: (data) => this.handleFormSubmit(data),
+                onMachineModalClosed: () => this.resetEditingState(),
+                onConsoleClosed: () => this.resetConsoleState(),
+                onConsoleSend: (command) => this.handleConsoleSend(command),
+                onConsoleNavigate: (direction) => this.navigateHistory(direction)
+            });
+        } else {
+            console.warn('MachineManagerView non disponible - interactions limitées');
+            this.managerView = null;
         }
         this.init();
     }
 
     init() {
-        this.bindEvents();
         this.updateDisplay();
         // Charger les machines sauvegardées depuis la BDD
         this.loadMachinesFromDB();
     }
 
-    bindEvents() {
-        const addMachineBtn = document.getElementById('addMachineBtn');
-        const modal = document.getElementById('machineModal');
-        const closeModal = document.getElementById('closeModal');
-        const cancelBtn = document.getElementById('cancelBtn');
-        const form = document.getElementById('machineForm');
-        const consoleModal = document.getElementById('consoleModal');
-        const closeConsoleModal = document.getElementById('closeConsoleModal');
-        const sendConsoleBtn = document.getElementById('sendConsoleBtn');
-        const consoleInput = document.getElementById('consoleInput');
-
-        if (addMachineBtn) {
-            addMachineBtn.addEventListener('click', () => this.addMachine());
-        }
-        if (closeModal) {
-            closeModal.addEventListener('click', () => this.hideModal());
-        }
-        if (cancelBtn) {
-            cancelBtn.addEventListener('click', () => this.hideModal());
-        }
-        if (form) {
-            form.addEventListener('submit', (e) => this.handleFormSubmit(e));
-        }
-
-        // Fermer la modal en cliquant à l'extérieur
-        if (modal) {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
-                    this.hideModal();
-                }
-            });
-        }
-
-        // Console modal events
-        if (closeConsoleModal) {
-            closeConsoleModal.addEventListener('click', () => this.hideConsoleModal());
-        }
-        if (consoleModal) {
-            // Ne pas fermer la console en cliquant à l'extérieur
-            // La console doit rester ouverte pour permettre la communication continue
-            consoleModal.addEventListener('click', (e) => {
-                // Ne rien faire - empêcher la fermeture accidentelle
-            });
-        }
-        if (sendConsoleBtn) {
-            sendConsoleBtn.addEventListener('click', () => this.sendConsoleCommand());
-        }
-        if (consoleInput) {
-            // Gestion des touches clavier
-            consoleInput.addEventListener('keydown', (e) => {
-                if (e.ctrlKey && e.key === 'Enter') {
-                    // Ctrl+Enter pour envoyer
-                    e.preventDefault();
-                    this.sendConsoleCommand();
-                } else if (e.key === 'ArrowUp') {
-                    // Flèche haut - commande précédente
-                    e.preventDefault();
-                    this.navigateHistory('up');
-                } else if (e.key === 'ArrowDown') {
-                    // Flèche bas - commande suivante
-                    e.preventDefault();
-                    this.navigateHistory('down');
-                }
-            });
-        }
-
-        // Gestion des préréglages de baudrate
-        this.bindBaudrateEvents();
-        
-        // Test de la connexion automatique (à supprimer en production)
-        console.log('MachineManager initialisé - Connexion automatique activée');
+    resetEditingState() {
+        this.currentEditingMachine = null;
     }
 
-    bindBaudrateEvents() {
-        const dropdownBtn = document.getElementById('baudrateDropdownBtn');
-        const dropdown = document.getElementById('baudrateDropdown');
-        const baudrateInput = document.getElementById('machineBaudRate');
-
-        // Toggle du dropdown
-        if (dropdownBtn && dropdown) {
-            dropdownBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.toggleBaudrateDropdown();
-            });
-        }
-
-        // Options du dropdown
-        const optionButtons = document.querySelectorAll('.baudrate-option');
-        optionButtons.forEach(button => {
-            button.addEventListener('click', (e) => {
-                const baudrate = e.target.getAttribute('data-baudrate');
-                this.selectBaudrateOption(baudrate);
-            });
-        });
-
-        // Fermer le dropdown en cliquant à l'extérieur
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('#baudrateDropdown') && !e.target.closest('#baudrateDropdownBtn')) {
-                this.hideBaudrateDropdown();
-            }
-        });
-
-        // Validation en temps réel de l'input
-        if (baudrateInput) {
-            baudrateInput.addEventListener('input', (e) => {
-                this.validateBaudrateInput(e.target.value);
-            });
-
-            baudrateInput.addEventListener('blur', (e) => {
-                this.validateBaudrateInput(e.target.value);
-            });
-        }
+    resetConsoleState() {
+        this.currentConsoleMachine = null;
+        this.historyIndex = -1;
+        this.managerView?.clearConsoleInput();
     }
 
-    toggleBaudrateDropdown() {
-        const dropdown = document.getElementById('baudrateDropdown');
-        if (dropdown) {
-            if (dropdown.classList.contains('hidden')) {
-                this.showBaudrateDropdown();
-            } else {
-                this.hideBaudrateDropdown();
-            }
+    async handleFormSubmit({ name, baudRate }) {
+        if (!this.currentEditingMachine || !this.machines.has(this.currentEditingMachine)) {
+            notificationManager.show('Machine non trouvée', 'error');
+            return;
         }
-    }
 
-    showBaudrateDropdown() {
-        const dropdown = document.getElementById('baudrateDropdown');
-        if (dropdown) {
-            dropdown.classList.remove('hidden');
-            dropdown.classList.add('show');
+        if (!name) {
+            notificationManager.show('Le nom de la machine est requis', 'error');
+            this.managerView?.focusMachineName();
+            return;
         }
-    }
 
-    hideBaudrateDropdown() {
-        const dropdown = document.getElementById('baudrateDropdown');
-        if (dropdown) {
-            dropdown.classList.add('hidden');
-            dropdown.classList.remove('show');
-        }
-    }
+        const machine = this.machines.get(this.currentEditingMachine);
+        const parsedBaudRate = Number.isInteger(baudRate) ? baudRate : parseInt(baudRate, 10);
+        const sanitizedBaudRate = Number.isNaN(parsedBaudRate) ? machine?.baudRate : parsedBaudRate;
 
-    selectBaudrateOption(baudrate) {
-        const baudrateInput = document.getElementById('machineBaudRate');
-        if (baudrateInput) {
-            baudrateInput.value = baudrate;
-            baudrateInput.focus();
-        }
-        
-        // Fermer le dropdown
-        this.hideBaudrateDropdown();
-        
-        // Validation
-        this.validateBaudrateInput(baudrate);
-    }
-
-    validateBaudrateInput(value) {
-        const baudrateInput = document.getElementById('machineBaudRate');
-        if (!baudrateInput) return;
-
-        const numValue = parseInt(value);
-        
-        // Validation
-        if (isNaN(numValue) || numValue < 1200 || numValue > 20000000) {
-            baudrateInput.style.borderColor = '#EF4444';
-            baudrateInput.style.backgroundColor = '#FEF2F2';
-        } else {
-            baudrateInput.style.borderColor = '';
-            baudrateInput.style.backgroundColor = '';
-        }
+        await this.updateMachine(this.currentEditingMachine, name, sanitizedBaudRate);
+        this.managerView?.closeMachineModal();
     }
 
     showModal(machineId) {
@@ -222,34 +95,11 @@ class MachineManager {
         }
 
         this.currentEditingMachine = machineId;
-        const modal = document.getElementById('machineModal');
-        const nameInput = document.getElementById('machineName');
-        const baudRateSelect = document.getElementById('machineBaudRate');
-
         const machine = this.machines.get(machineId);
-        nameInput.value = machine.name;
-        baudRateSelect.value = machine.baudRate;
-
-        // Initialiser les préréglages de baudrate
-        this.initializeBaudratePresets(machine.baudRate);
-
-        modal.classList.remove('hidden');
-        nameInput.focus();
-    }
-
-    initializeBaudratePresets(currentBaudrate) {
-        const baudrateInput = document.getElementById('machineBaudRate');
-        if (baudrateInput) {
-            baudrateInput.value = currentBaudrate;
-            // Validation de la valeur initiale
-            this.validateBaudrateInput(currentBaudrate);
-        }
-    }
-
-    hideModal() {
-        const modal = document.getElementById('machineModal');
-        modal.classList.add('hidden');
-        this.currentEditingMachine = null;
+        this.managerView?.showMachineModal({
+            name: machine.name,
+            baudRate: machine.baudRate
+        });
     }
 
     showConsoleModal(machineId) {
@@ -259,41 +109,24 @@ class MachineManager {
         }
 
         const machine = this.machines.get(machineId);
-        
+
         if (!machine.isConnected) {
             notificationManager.show('La machine doit être connectée pour ouvrir la console', 'error');
             return;
         }
 
         this.currentConsoleMachine = machineId;
-        const modal = document.getElementById('consoleModal');
-        const consoleOutput = document.getElementById('consoleOutput');
-        const consoleInput = document.getElementById('consoleInput');
-
-        // Vider la console
-        consoleOutput.innerHTML = '<div class="text-gray-500 dark:text-gray-400">Console ouverte. En attente de données...</div>';
-
-        // Réinitialiser l'historique pour cette nouvelle session
         this.historyIndex = -1;
-
-        modal.classList.remove('hidden');
-        consoleInput.focus();
+        this.managerView?.showConsoleModal();
 
         // Démarrer la lecture des données seulement si pas déjà active
         if (!this.readers.has(machineId)) {
-        this.startReadingSerial(machineId);
+            this.startReadingSerial(machineId);
         }
     }
 
     async hideConsoleModal() {
-        const modal = document.getElementById('consoleModal');
-        modal.classList.add('hidden');
-        
-        // Ne pas arrêter la lecture, juste fermer la console
-        // La connexion doit rester active
-        if (this.currentConsoleMachine) {
-            this.currentConsoleMachine = null;
-        }
+        this.managerView?.closeConsoleModal();
     }
 
     /**
@@ -316,11 +149,12 @@ class MachineManager {
         }
     }
 
-    async sendConsoleCommand() {
-        const consoleInput = document.getElementById('consoleInput');
-        const command = consoleInput.value.trim();
+    async handleConsoleSend(command) {
+        const trimmedCommand = (command || '').trim();
 
-        if (!command) return;
+        if (!trimmedCommand) {
+            return;
+        }
 
         if (!this.currentConsoleMachine) {
             notificationManager.show('Aucune machine sélectionnée', 'error');
@@ -334,21 +168,17 @@ class MachineManager {
         }
 
         try {
-            // Ajouter la commande à l'historique
-            this.addToHistory(command);
-            
-            // Ajouter la commande à la console
-            this.appendToConsole(`> ${command}`, 'text-blue-400');
-            
-            // Encoder et envoyer via Web Serial
+            this.addToHistory(trimmedCommand);
+            this.appendToConsole(`> ${trimmedCommand}`, 'text-blue-400');
+
             const encoder = new TextEncoder();
             const writer = machine.port.writable.getWriter();
-            await writer.write(encoder.encode(command + '\n'));
+            await writer.write(encoder.encode(`${trimmedCommand}\n`));
             writer.releaseLock();
 
-            // Vider le champ de saisie et réinitialiser l'index
-            consoleInput.value = '';
+            this.managerView?.clearConsoleInput();
             this.historyIndex = -1;
+            this.managerView?.focusConsoleInput();
         } catch (error) {
             console.error('Erreur lors de l\'envoi:', error);
             this.appendToConsole(`[Erreur] ${error.message}`, 'text-red-400');
@@ -369,37 +199,30 @@ class MachineManager {
     }
 
     navigateHistory(direction) {
-        if (this.commandHistory.length === 0) return;
+        if (this.commandHistory.length === 0 || !this.managerView) {
+            return;
+        }
 
-        const consoleInput = document.getElementById('consoleInput');
-        
         if (direction === 'up') {
-            // Flèche haut - commande précédente
             if (this.historyIndex < this.commandHistory.length - 1) {
                 this.historyIndex++;
-                consoleInput.value = this.commandHistory[this.commandHistory.length - 1 - this.historyIndex];
+                const value = this.commandHistory[this.commandHistory.length - 1 - this.historyIndex];
+                this.managerView.setConsoleInputValue(value);
             }
         } else if (direction === 'down') {
-            // Flèche bas - commande suivante
             if (this.historyIndex > 0) {
                 this.historyIndex--;
-                consoleInput.value = this.commandHistory[this.commandHistory.length - 1 - this.historyIndex];
+                const value = this.commandHistory[this.commandHistory.length - 1 - this.historyIndex];
+                this.managerView.setConsoleInputValue(value);
             } else if (this.historyIndex === 0) {
                 this.historyIndex = -1;
-                consoleInput.value = '';
+                this.managerView.clearConsoleInput();
             }
         }
     }
 
     appendToConsole(text, colorClass = 'text-green-400') {
-        const consoleOutput = document.getElementById('consoleOutput');
-        const div = document.createElement('div');
-        div.className = colorClass;
-        div.textContent = text;
-        consoleOutput.appendChild(div);
-        
-        // Auto-scroll vers le bas
-        consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        this.managerView?.appendToConsole(text, colorClass);
     }
 
     async startReadingSerial(machineId) {
@@ -668,22 +491,6 @@ class MachineManager {
         if (this.currentConsoleMachine === machineId) {
             this.appendToConsole(`[Déconnexion] ${reason}`, 'text-red-400');
         }
-    }
-
-    async handleFormSubmit(e) {
-        e.preventDefault();
-        
-        const name = document.getElementById('machineName').value.trim();
-        const baudRate = parseInt(document.getElementById('machineBaudRate').value);
-
-        if (!name) {
-            notificationManager.show('Le nom de la machine est requis', 'error');
-            return;
-        }
-
-        // Modifier une machine existante
-        await this.updateMachine(this.currentEditingMachine, name, baudRate);
-        this.hideModal();
     }
 
     async addMachine() {
@@ -1815,10 +1622,10 @@ class MachineManager {
     }
 
     updateDisplay() {
-        if (!this.view) {
+        if (!this.tileView) {
             return;
         }
-        this.view.render(this.machines);
+        this.tileView.render(this.machines);
     }
 
 }
