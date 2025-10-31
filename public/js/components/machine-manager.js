@@ -1209,19 +1209,31 @@ class MachineManager {
     async connectExistingMachine(machineId) {
         const machine = this.machines.get(machineId);
         if (!machine) {
-            notificationManager.show('Machine non trouvée', 'error');
+            if (typeof notificationManager !== 'undefined') {
+                notificationManager.show('Machine non trouvée', 'error');
+            } else {
+                console.error('Machine non trouvée');
+            }
             return;
         }
         
         // Vérifier si la machine est déjà connectée
         if (machine.isConnected || machine.status === 'ready' || machine.status === 'connected') {
-            notificationManager.show('Machine déjà connectée', 'info');
+            if (typeof notificationManager !== 'undefined') {
+                notificationManager.show('Machine déjà connectée', 'info');
+            } else {
+                console.log('Machine déjà connectée');
+            }
             return;
         }
         
         // Vérifier si la machine est en cours de connexion
         if (machine.status === 'connecting' || machine.status === 'retrieving') {
-            notificationManager.show('Connexion en cours...', 'info');
+            if (typeof notificationManager !== 'undefined') {
+                notificationManager.show('Connexion en cours...', 'info');
+            } else {
+                console.log('Connexion en cours...');
+            }
             return;
         }
         

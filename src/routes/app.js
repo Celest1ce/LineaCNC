@@ -50,6 +50,19 @@ router.get('/account', requireAuth, (req, res) => {
   delete req.session.error;
 });
 
+// Page Mesh viewer
+router.get('/tools/mesh-viewer', requireAuth, (req, res) => {
+  res.render('mesh-viewer', {
+    title: 'Mesh Viewer',
+    user: req.session.user,
+    success: req.session.success || null,
+    error: req.session.error || null
+  });
+  
+  delete req.session.success;
+  delete req.session.error;
+});
+
 // Mise à jour du pseudo
 router.post('/account/update-pseudo', requireAuth, async (req, res) => {
   const { error: validationError, value } = updatePseudoSchema.validate(req.body, {
