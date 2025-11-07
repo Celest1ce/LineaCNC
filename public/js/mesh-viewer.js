@@ -450,18 +450,21 @@ class MeshViewer {
         const c = mz - a * mx - b * my;
 
         // Remplir uniquement les valeurs manquantes
-        let filled = 0;
+        const filledCells = [];
         for (let i = 0; i < rows; i++) {
             for (let j = 0; j < cols; j++) {
                 if (matrix[i][j] === null || matrix[i][j] === undefined) {
                     const z = a * j + b * i + c;
-                    matrix[i][j] = z;
-                    filled++;
+                    if (Number.isFinite(z)) {
+                        const roundedValue = parseFloat(z.toFixed(3));
+                        matrix[i][j] = roundedValue;
+                        filledCells.push({ row: i, col: j, value: roundedValue });
+                    }
                 }
             }
         }
 
-        if (filled === 0) {
+        if (filledCells.length === 0) {
             this.setAutoCorrectionMessage('Aucune valeur manquante à corriger.', 'info');
             return;
         }
@@ -470,11 +473,21 @@ class MeshViewer {
         const stats = this.calculateStats(matrix);
         this.minValue = stats.min;
         this.maxValue = stats.max;
+
+        filledCells.forEach(({ row, col, value }) => {
+            const cell = document.querySelector(`.mesh-cell.editable[data-row="${row}"][data-col="${col}"]`);
+            if (cell) {
+                cell.dataset.value = value;
+            }
+        });
+
+        this.meshData.missingCount = rows * cols - stats.count;
+        this.meshData.totalValues = stats.count;
         this.updateMatrixColors(stats.min, stats.max);
         this.updateStats(stats, rows, cols);
         this.updateLegend(stats.min, stats.max);
 
-        const successMessage = `${filled} case(s) manquante(s) corrigée(s) par ajustement plan.`;
+        const successMessage = `${filledCells.length} case(s) manquante(s) corrigée(s) par ajustement plan.`;
         this.setAutoCorrectionMessage(successMessage, 'success');
         this.notify(successMessage, 'success');
         this.updateAutoCorrectionAvailability();
