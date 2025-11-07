@@ -1064,9 +1064,12 @@ class MeshViewer {
         // Mettre à jour les statistiques
         this.updateStats(stats, rows, cols);
         this.updateLegend(stats.min, stats.max);
-        
+
         // Rendre la vue 3D
         this.render3D(meshData);
+
+        // Activer la correction automatique maintenant que les données sont disponibles
+        this.updateAutoCorrectionAvailability();
     }
     
     /**
