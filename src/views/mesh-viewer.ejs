@@ -34,6 +34,62 @@
         .mesh-cell.editable {
             cursor: text;
         }
+        .mesh-cell-value {
+            font-size: 0.75rem;
+            font-weight: 600;
+            pointer-events: none;
+        }
+        .mesh-cell .mesh-cell-refresh {
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9999px;
+            border: none;
+            padding: 0;
+            background-color: rgba(255, 255, 255, 0.9);
+            color: #1f2937;
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.85);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            cursor: pointer;
+        }
+        .dark .mesh-cell .mesh-cell-refresh {
+            background-color: rgba(17, 24, 39, 0.85);
+            color: #e5e7eb;
+        }
+        .mesh-cell:hover .mesh-cell-refresh,
+        .mesh-cell-refreshing .mesh-cell-refresh {
+            opacity: 1;
+            pointer-events: auto;
+            transform: scale(1);
+        }
+        .mesh-cell .mesh-cell-refresh svg {
+            width: 12px;
+            height: 12px;
+        }
+        .mesh-cell .mesh-cell-refresh.loading svg {
+            animation: spin 0.8s linear infinite;
+        }
+        .mesh-cell-refreshing {
+            box-shadow: inset 0 0 0 2px rgba(59, 130, 246, 0.45);
+        }
+        .mesh-cell-refreshed {
+            animation: cellPulse 1s ease-out;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        @keyframes cellPulse {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+            100% { box-shadow: 0 0 0 16px rgba(59, 130, 246, 0); }
+        }
         .heatmap-legend {
             display: flex;
             height: 20px;

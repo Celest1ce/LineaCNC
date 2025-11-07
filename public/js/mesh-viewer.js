@@ -28,6 +28,8 @@ class MeshViewer {
         this.mesh3DSmoothingLabels = ['Brut', 'Léger', 'Standard', 'Doux', 'Ultra'];
         this.mesh3DSmoothingLevel = 2; // Niveau de lissage par défaut (5 niveaux disponibles)
         this.mesh3DZScale = 1.0; // Amplitude Z par défaut
+        this.lastMeshMachineId = null; // Dernière machine utilisée pour le mesh affiché
+        this.pointRefreshState = null; // État du rafraîchissement d'un point individuel
 
         this.loadMesh3DPreferences();
         this.init();
@@ -1013,16 +1015,93 @@ class MeshViewer {
         if (legendMax) legendMax.textContent = max.toFixed(3);
     }
     
+    createCellRefreshButton() {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'mesh-cell-refresh';
+        button.setAttribute('aria-label', 'Rafraîchir la valeur depuis la machine');
+        button.title = 'Rafraîchir la valeur depuis la machine';
+        button.innerHTML = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7V4m0 0h3M4 4l3.5 3.5M16 13v3m0 0h-3m3 0l-3.5-3.5M6.464 6.464a6 6 0 018.485 0M13.536 13.536a6 6 0 01-8.485 0"></path></svg>';
+        return button;
+    }
+
+    applyValueToCell(cell, value, stats) {
+        const valueSpan = cell.querySelector('.mesh-cell-value');
+        let numericValue = value;
+
+        if (numericValue === '' || numericValue === null || numericValue === undefined) {
+            numericValue = null;
+        } else if (typeof numericValue !== 'number') {
+            numericValue = parseFloat(numericValue);
+            if (Number.isNaN(numericValue)) {
+                numericValue = null;
+            }
+        }
+
+        const hasStats = stats && Number.isFinite(stats.min) && Number.isFinite(stats.max);
+        const min = hasStats ? stats.min : (numericValue ?? 0);
+        const max = hasStats ? stats.max : (numericValue ?? 0);
+
+        if (numericValue === null) {
+            cell.dataset.value = '';
+            cell.style.backgroundColor = '#9ca3af'; // gray-400
+            cell.style.color = '#ffffff';
+            cell.style.fontWeight = '500';
+            if (valueSpan) {
+                valueSpan.textContent = '-';
+            }
+            cell.classList.remove('mesh-cell-refreshing');
+            return;
+        }
+
+        const bgColor = this.getHeatmapColor(numericValue, min, max);
+        cell.dataset.value = numericValue;
+        cell.style.backgroundColor = bgColor;
+        const rgb = this.hexToRgb(bgColor);
+        const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+        cell.style.color = brightness > 128 ? '#000000' : '#ffffff';
+        cell.style.fontWeight = '500';
+        if (valueSpan) {
+            valueSpan.textContent = numericValue >= 0 ? `+${numericValue.toFixed(3)}` : numericValue.toFixed(3);
+        }
+        cell.classList.remove('mesh-cell-refreshing');
+    }
+
+    createMatrixCell(row, col, value, stats) {
+        const cell = document.createElement('div');
+        cell.className = 'mesh-cell editable';
+        cell.dataset.row = row;
+        cell.dataset.col = col;
+
+        const refreshButton = this.createCellRefreshButton();
+        const valueSpan = document.createElement('span');
+        valueSpan.className = 'mesh-cell-value';
+
+        cell.appendChild(refreshButton);
+        cell.appendChild(valueSpan);
+
+        this.applyValueToCell(cell, value, stats);
+
+        refreshButton.addEventListener('click', (event) => {
+            event.stopPropagation();
+            this.requestPointRefresh(row, col, cell, refreshButton);
+        });
+
+        cell.addEventListener('click', () => this.editCell(cell, row, col));
+
+        return cell;
+    }
+
     /**
      * Affiche la matrice
      */
     renderMatrix(meshData) {
         const container = document.getElementById('meshContainer');
         if (!container) return;
-        
+
         // Retirer le message par défaut si présent
         container.innerHTML = '';
-        
+
         const { matrix, rows, cols } = meshData;
         const stats = this.calculateStats(matrix);
         this.minValue = stats.min;
@@ -1038,36 +1117,11 @@ class MeshViewer {
         for (let i = 0; i < rows; i++) {
             for (let j = 0; j < cols; j++) {
                 const value = matrix[i][j];
-                const cell = document.createElement('div');
-                cell.className = 'mesh-cell editable';
-                cell.dataset.row = i;
-                cell.dataset.col = j;
-                cell.dataset.value = value !== null ? value : '';
-                
-                if (value === null) {
-                    // Valeur manquante : fond gris et tiret
-                    cell.style.backgroundColor = '#9ca3af'; // gray-400
-                    cell.style.color = '#ffffff';
-                    cell.style.fontWeight = '500';
-                    cell.textContent = '-';
-                } else {
-                    // Valeur présente : couleur heatmap
-                    cell.style.backgroundColor = this.getHeatmapColor(value, stats.min, stats.max);
-                    // Ajuster la couleur du texte selon la luminosité de fond
-                    const rgb = this.hexToRgb(cell.style.backgroundColor);
-                    const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
-                    cell.style.color = brightness > 128 ? '#000000' : '#ffffff';
-                    cell.style.fontWeight = '500';
-                    cell.textContent = value >= 0 ? `+${value.toFixed(3)}` : value.toFixed(3);
-                }
-                
-                // Rendre la cellule éditable
-                cell.addEventListener('click', () => this.editCell(cell, i, j));
-                
+                const cell = this.createMatrixCell(i, j, value, stats);
                 table.appendChild(cell);
             }
         }
-        
+
         container.innerHTML = '';
         container.appendChild(table);
         
@@ -1080,8 +1134,186 @@ class MeshViewer {
 
         // Activer la correction automatique maintenant que les données sont disponibles
         this.updateAutoCorrectionAvailability();
+
+        if (this.pointRefreshState && this.pointRefreshState.status === 'awaiting-data') {
+            const { row: targetRow, col: targetCol } = this.pointRefreshState;
+            const refreshedCell = table.querySelector(`.mesh-cell.editable[data-row="${targetRow}"][data-col="${targetCol}"]`);
+            if (refreshedCell) {
+                refreshedCell.classList.add('mesh-cell-refreshed');
+                setTimeout(() => refreshedCell.classList.remove('mesh-cell-refreshed'), 1200);
+            }
+            this.notify(`Valeur du point (${targetRow + 1}, ${targetCol + 1}) mise à jour depuis la machine.`, 'success');
+            this.pointRefreshState = null;
+        } else if (this.pointRefreshState) {
+            this.pointRefreshState = null;
+        }
     }
-    
+
+    async requestPointRefresh(row, col, cell, button) {
+        if (!this.meshData || !Array.isArray(this.meshData.matrix)) {
+            this.notify('Aucun mesh n\'est chargé.', 'error');
+            return;
+        }
+
+        if (!this.lastMeshMachineId) {
+            this.notify('Importez d\'abord un mesh depuis la machine pour rafraîchir un point.', 'error');
+            return;
+        }
+
+        if (this.pointRefreshState) {
+            this.notify('Une actualisation de point est déjà en cours.', 'warning');
+            return;
+        }
+
+        const supportsSerial = typeof navigator !== 'undefined' && 'serial' in navigator;
+        if (!supportsSerial) {
+            this.notify('La connexion série n\'est pas disponible sur ce navigateur.', 'error');
+            return;
+        }
+
+        const meshCommandInput = document.getElementById('meshCommand');
+        const meshCommand = meshCommandInput ? meshCommandInput.value.trim() : 'G29 T';
+        if (!meshCommand) {
+            this.notify('Veuillez définir la commande de récupération du mesh.', 'error');
+            return;
+        }
+
+        const originalContent = button.innerHTML;
+        button.disabled = true;
+        button.classList.add('loading');
+        button.innerHTML = '<svg class="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V2C5.373 2 2 5.373 2 12h2zm2 5.291A7.962 7.962 0 014 12H2c0 3.042 1.135 5.824 3 7.938l1-2.647z"></path></svg>';
+        cell.classList.add('mesh-cell-refreshing');
+
+        this.pointRefreshState = {
+            row,
+            col,
+            status: 'loading',
+            cell,
+            button,
+            originalContent
+        };
+
+        try {
+            if (typeof MachineManager === 'undefined') {
+                throw new Error('Le gestionnaire de machines n\'est pas disponible.');
+            }
+
+            if (typeof window.machineManager === 'undefined') {
+                window.machineManager = new MachineManager();
+                await window.machineManager.loadMachinesFromDB();
+            }
+
+            const machineManager = window.machineManager;
+            let machine = machineManager.machines.get(this.lastMeshMachineId);
+
+            if (!machine) {
+                await machineManager.loadMachinesFromDB();
+                machine = machineManager.machines.get(this.lastMeshMachineId);
+            }
+
+            if (!machine) {
+                throw new Error('Impossible de retrouver la machine associée à ce mesh.');
+            }
+
+            if (!machine.isConnected) {
+                const authorizedPorts = supportsSerial ? await navigator.serial.getPorts() : [];
+                if (authorizedPorts.length > 0) {
+                    await machineManager.connectExistingMachine(this.lastMeshMachineId);
+                } else {
+                    await machineManager.authorizeAndConnect(this.lastMeshMachineId);
+                }
+                machine = machineManager.machines.get(this.lastMeshMachineId);
+            }
+
+            if (!machine || !machine.isConnected || !machine.port) {
+                throw new Error('Impossible de se connecter à la machine pour rafraîchir le point.');
+            }
+
+            if (!machineManager.readers.has(this.lastMeshMachineId)) {
+                machineManager.startReadingSerial(this.lastMeshMachineId);
+            }
+
+            if (this.importTimeout) {
+                clearTimeout(this.importTimeout);
+                this.importTimeout = null;
+            }
+
+            this.autoImportDone = false;
+            this.machineDataBuffer = '';
+            this.currentMeshMachineId = this.lastMeshMachineId;
+
+            if (typeof this.serialUnsubscribe === 'function') {
+                this.serialUnsubscribe();
+                this.serialUnsubscribe = null;
+            }
+
+            this.serialUnsubscribe = machineManager.addSerialListener(({ machineId: emittedId, data }) => {
+                if (emittedId === this.currentMeshMachineId) {
+                    this.collectMachineData(`${data}\n`);
+                }
+            });
+
+            const encoder = new TextEncoder();
+            let writer = null;
+            try {
+                writer = machine.port.writable.getWriter();
+                await writer.write(encoder.encode(`${meshCommand}\n`));
+            } finally {
+                writer?.releaseLock();
+            }
+
+            this.collectMachineData(`> ${meshCommand}\n`);
+            if (this.pointRefreshState) {
+                this.pointRefreshState.status = 'awaiting-data';
+            }
+        } catch (error) {
+            console.error('Erreur lors du rafraîchissement du point:', error);
+            const message = error?.message || 'Échec du rafraîchissement du point.';
+            this.failPointRefresh(message);
+        }
+    }
+
+    failPointRefresh(message) {
+        if (!this.pointRefreshState) {
+            if (message) {
+                this.notify(message, 'error');
+            }
+            return;
+        }
+
+        const { cell, button, originalContent } = this.pointRefreshState;
+        if (cell) {
+            cell.classList.remove('mesh-cell-refreshing');
+        }
+        if (button) {
+            button.disabled = false;
+            button.classList.remove('loading');
+            if (typeof originalContent === 'string') {
+                button.innerHTML = originalContent;
+            }
+        }
+
+        if (typeof this.serialUnsubscribe === 'function') {
+            this.serialUnsubscribe();
+            this.serialUnsubscribe = null;
+        }
+
+        if (this.importTimeout) {
+            clearTimeout(this.importTimeout);
+            this.importTimeout = null;
+        }
+
+        this.currentMeshMachineId = null;
+        this.machineDataBuffer = null;
+        this.autoImportDone = false;
+
+        if (message) {
+            this.notify(message, 'error');
+        }
+
+        this.pointRefreshState = null;
+    }
+
     /**
      * Initialise la scène 3D
      */
@@ -1511,26 +1743,17 @@ class MeshViewer {
             // Si vide, c'est une valeur manquante
             if (inputValue === '' || inputValue === '-') {
                 this.meshData.matrix[row][col] = null;
-                
+
                 // Recalculer les statistiques
                 const stats = this.calculateStats(this.meshData.matrix);
                 this.minValue = stats.min;
                 this.maxValue = stats.max;
-                
+
                 // Recréer la cellule avec valeur manquante
-                const newCell = document.createElement('div');
-                newCell.className = 'mesh-cell editable';
-                newCell.dataset.row = row;
-                newCell.dataset.col = col;
-                newCell.dataset.value = '';
-                newCell.style.backgroundColor = '#9ca3af'; // gray-400
-                newCell.style.color = '#ffffff';
-                newCell.style.fontWeight = '500';
-                newCell.textContent = '-';
-                newCell.addEventListener('click', () => this.editCell(newCell, row, col));
-                
+                const newCell = this.createMatrixCell(row, col, null, stats);
+
                 container.replaceChild(newCell, input);
-                
+
                 // Mettre à jour toutes les cellules pour recalculer les couleurs
                 this.updateMatrixColors(stats.min, stats.max);
                 
@@ -1542,30 +1765,17 @@ class MeshViewer {
                 if (!isNaN(newValue)) {
                     // Mettre à jour la matrice
                     this.meshData.matrix[row][col] = newValue;
-                    
+
                     // Recalculer les statistiques
                     const stats = this.calculateStats(this.meshData.matrix);
                     this.minValue = stats.min;
                     this.maxValue = stats.max;
-                    
+
                     // Recréer la cellule avec la nouvelle valeur
-                    const newCell = document.createElement('div');
-                    newCell.className = 'mesh-cell editable';
-                    newCell.dataset.row = row;
-                    newCell.dataset.col = col;
-                    newCell.dataset.value = newValue;
-                    const bgColor = this.getHeatmapColor(newValue, stats.min, stats.max);
-                    newCell.style.backgroundColor = bgColor;
-                    // Ajuster la couleur du texte selon la luminosité de fond
-                    const rgb = this.hexToRgb(bgColor);
-                    const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
-                    newCell.style.color = brightness > 128 ? '#000000' : '#ffffff';
-                    newCell.style.fontWeight = '500';
-                    newCell.textContent = newValue >= 0 ? `+${newValue.toFixed(3)}` : newValue.toFixed(3);
-                    newCell.addEventListener('click', () => this.editCell(newCell, row, col));
-                    
+                    const newCell = this.createMatrixCell(row, col, newValue, stats);
+
                     container.replaceChild(newCell, input);
-                    
+
                     // Mettre à jour toutes les cellules pour recalculer les couleurs
                     this.updateMatrixColors(stats.min, stats.max);
                     
@@ -1594,27 +1804,15 @@ class MeshViewer {
      */
     updateMatrixColors(min, max) {
         const cells = document.querySelectorAll('.mesh-cell.editable');
+        const stats = { min, max };
         cells.forEach(cell => {
             const valueStr = cell.dataset.value;
-            if (valueStr === '' || valueStr === null || valueStr === undefined) {
-                // Valeur manquante : garder le fond gris et le tiret
-                cell.style.backgroundColor = '#9ca3af'; // gray-400
-                cell.style.color = '#ffffff';
-                cell.textContent = '-';
-            } else {
-                const value = parseFloat(valueStr);
-                if (!isNaN(value)) {
-                    const bgColor = this.getHeatmapColor(value, min, max);
-                    cell.style.backgroundColor = bgColor;
-                    // Ajuster la couleur du texte selon la luminosité de fond
-                    const rgb = this.hexToRgb(bgColor);
-                    const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
-                    cell.style.color = brightness > 128 ? '#000000' : '#ffffff';
-                    cell.textContent = value >= 0 ? `+${value.toFixed(3)}` : value.toFixed(3);
-                }
-            }
+            const value = valueStr === '' || valueStr === null || valueStr === undefined
+                ? null
+                : parseFloat(valueStr);
+            this.applyValueToCell(cell, Number.isNaN(value) ? null : value, stats);
         });
-        
+
         // Mettre à jour la vue 3D si elle existe
         if (this.meshData && this.scene3D) {
             this.render3D(this.meshData);
@@ -1642,10 +1840,11 @@ class MeshViewer {
 
         this.meshData = meshData;
         this.renderMatrix(meshData);
-        
+        this.lastMeshMachineId = null;
+
         // Fermer le modal après import réussi
         this.closeImportModal();
-        
+
         // Masquer les infos de détection
         const importInfo = document.getElementById('importInfo');
         if (importInfo) {
@@ -1831,39 +2030,52 @@ class MeshViewer {
         
         console.log('Tentative d\'import depuis buffer:', this.machineDataBuffer.length, 'caractères');
         console.log('Contenu du buffer:', this.machineDataBuffer.substring(0, 500));
-        
+
         // Parser les données
         const meshData = this.parseMeshData(this.machineDataBuffer);
         if (!meshData) {
             console.log('Échec du parsing, réessai autorisé');
-            this.autoImportDone = false; // Réessayer si le parsing échoue
+            if (this.pointRefreshState) {
+                this.failPointRefresh('Impossible d\'interpréter la réponse de la machine pour ce point.');
+            } else {
+                this.autoImportDone = false; // Réessayer si le parsing échoue
+            }
             return;
         }
-        
+
         console.log('Données parsées avec succès:', {
             rows: meshData.rows,
             cols: meshData.cols,
             totalValues: meshData.totalValues,
             missingCount: meshData.missingCount
         });
-        
+
+        const isPointRefresh = !!(this.pointRefreshState && (this.pointRefreshState.status === 'awaiting-data' || this.pointRefreshState.status === 'loading'));
+
         // Importer les données
         this.meshData = meshData;
         this.renderMatrix(meshData);
-        
+
+        if (this.currentMeshMachineId !== null && this.currentMeshMachineId !== undefined) {
+            this.lastMeshMachineId = this.currentMeshMachineId;
+        }
+
         // Nettoyer le buffer
         this.machineDataBuffer = null;
 
         // Fermer le modal
         this.closeMachineSelection();
 
-        if (typeof this.serialUnsubscribe === 'function') {
-            this.serialUnsubscribe();
-            this.serialUnsubscribe = null;
-        }
-
         // Afficher une notification
-        this.notify(`Mesh importé: ${meshData.rows}x${meshData.cols} (${meshData.totalValues} valeurs)`, 'success');
+        if (isPointRefresh) {
+            if (this.pointRefreshState) {
+                this.pointRefreshState.cell = null;
+                this.pointRefreshState.button = null;
+                this.pointRefreshState.originalContent = null;
+            }
+        } else {
+            this.notify(`Mesh importé: ${meshData.rows}x${meshData.cols} (${meshData.totalValues} valeurs)`, 'success');
+        }
     }
     
     /**
