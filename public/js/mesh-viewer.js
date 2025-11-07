@@ -24,9 +24,12 @@ class MeshViewer {
         this.axesHelper = null;
         
         // Paramètres 3D
-        this.mesh3DSmooth = true; // Lissage par défaut
-        this.mesh3DZScale = 2.0; // Amplitude Z par défaut
-        
+        this.mesh3DPreferencesKey = 'meshViewer3DPreferences';
+        this.mesh3DSmoothingLabels = ['Brut', 'Léger', 'Standard', 'Doux', 'Ultra'];
+        this.mesh3DSmoothingLevel = 2; // Niveau de lissage par défaut (5 niveaux disponibles)
+        this.mesh3DZScale = 1.0; // Amplitude Z par défaut
+
+        this.loadMesh3DPreferences();
         this.init();
     }
     
@@ -84,7 +87,8 @@ class MeshViewer {
         const mesh3DSettingsModal = document.getElementById('mesh3DSettingsModal');
         const closeMesh3DSettingsModal = document.getElementById('closeMesh3DSettingsModal');
         const applyMesh3DSettings = document.getElementById('applyMesh3DSettings');
-        const mesh3DSmooth = document.getElementById('mesh3DSmooth');
+        const mesh3DSmoothingLevel = document.getElementById('mesh3DSmoothingLevel');
+        const mesh3DSmoothingValue = document.getElementById('mesh3DSmoothingValue');
         const mesh3DZScale = document.getElementById('mesh3DZScale');
         const mesh3DZScaleValue = document.getElementById('mesh3DZScaleValue');
         
@@ -108,19 +112,25 @@ class MeshViewer {
             applyMesh3DSettings.addEventListener('click', () => this.applyMesh3DSettings());
         }
         
-        if (mesh3DSmooth) {
-            mesh3DSmooth.checked = this.mesh3DSmooth;
-            mesh3DSmooth.addEventListener('change', (e) => {
-                mesh3DSmooth.checked = e.target.checked;
+        if (mesh3DSmoothingLevel && mesh3DSmoothingValue) {
+            mesh3DSmoothingLevel.value = String(this.mesh3DSmoothingLevel);
+            mesh3DSmoothingValue.textContent = this.getMeshSmoothingLabel(this.mesh3DSmoothingLevel);
+            mesh3DSmoothingLevel.addEventListener('input', (e) => {
+                const level = parseInt(e.target.value, 10);
+                if (!Number.isNaN(level)) {
+                    mesh3DSmoothingValue.textContent = this.getMeshSmoothingLabel(level);
+                }
             });
         }
-        
+
         if (mesh3DZScale && mesh3DZScaleValue) {
             mesh3DZScale.value = this.mesh3DZScale;
             mesh3DZScaleValue.textContent = this.mesh3DZScale.toFixed(1);
             mesh3DZScale.addEventListener('input', (e) => {
                 const value = parseFloat(e.target.value);
-                mesh3DZScaleValue.textContent = value.toFixed(1);
+                if (!Number.isNaN(value)) {
+                    mesh3DZScaleValue.textContent = value.toFixed(1);
+                }
             });
         }
         
@@ -1228,7 +1238,88 @@ class MeshViewer {
         };
         window.addEventListener('resize', handleResize);
     }
-    
+
+    /**
+     * Retourne le libellé du niveau de lissage actuel
+     */
+    getMeshSmoothingLabel(level) {
+        const index = Math.max(0, Math.min(this.mesh3DSmoothingLabels.length - 1, level));
+        return this.mesh3DSmoothingLabels[index] || `Niveau ${index + 1}`;
+    }
+
+    /**
+     * Calcule la matrice utilisée pour le rendu 3D avec le lissage sélectionné
+     */
+    getMesh3DRenderMatrix(matrix) {
+        const level = this.mesh3DSmoothingLevel;
+        if (!Array.isArray(matrix) || level <= 0) {
+            return matrix;
+        }
+        return this.applyMeshSmoothing(matrix, level);
+    }
+
+    /**
+     * Applique un lissage par moyenne locale sur plusieurs itérations
+     */
+    applyMeshSmoothing(matrix, iterations) {
+        const rows = Array.isArray(matrix) ? matrix.length : 0;
+        const cols = rows > 0 && Array.isArray(matrix[0]) ? matrix[0].length : 0;
+
+        if (rows === 0 || cols === 0) {
+            return matrix;
+        }
+
+        let current = matrix.map(row => row.map(value => value));
+
+        for (let iter = 0; iter < iterations; iter++) {
+            const next = current.map(row => row.slice());
+
+            for (let i = 0; i < rows; i++) {
+                for (let j = 0; j < cols; j++) {
+                    const currentValue = current[i][j];
+
+                    if (currentValue === null || currentValue === undefined || Number.isNaN(currentValue)) {
+                        next[i][j] = null;
+                        continue;
+                    }
+
+                    let sum = 0;
+                    let count = 0;
+
+                    for (let di = -1; di <= 1; di++) {
+                        for (let dj = -1; dj <= 1; dj++) {
+                            const ni = i + di;
+                            const nj = j + dj;
+
+                            if (ni < 0 || ni >= rows || nj < 0 || nj >= cols) {
+                                continue;
+                            }
+
+                            const neighbor = current[ni][nj];
+
+                            if (neighbor === null || neighbor === undefined || Number.isNaN(neighbor)) {
+                                continue;
+                            }
+
+                            sum += neighbor;
+                            count++;
+                        }
+                    }
+
+                    if (count > 0) {
+                        next[i][j] = sum / count;
+                    } else {
+                        next[i][j] = currentValue;
+                    }
+                }
+            }
+
+            current = next;
+        }
+
+        return current;
+    }
+
     /**
      * Rend le mesh en 3D
      */
@@ -1239,8 +1330,11 @@ class MeshViewer {
             if (!this.scene3D) return;
         }
         
-        const { matrix, rows, cols } = meshData;
-        const stats = this.calculateStats(matrix);
+        const { matrix } = meshData;
+        const renderMatrix = this.getMesh3DRenderMatrix(matrix);
+        const stats = this.calculateStats(renderMatrix);
+        const rows = renderMatrix.length || meshData.rows || 0;
+        const cols = (renderMatrix[0] ? renderMatrix[0].length : 0) || meshData.cols || 0;
         
         // Supprimer l'ancien mesh s'il existe
         if (this.mesh3D) {
@@ -1281,7 +1375,7 @@ class MeshViewer {
         // Créer les vertices et les couleurs
         for (let i = 0; i < rows; i++) {
             for (let j = 0; j < cols; j++) {
-                const value = matrix[i][j];
+                const value = renderMatrix[i][j];
                 
                 if (value === null) {
                     // Valeur manquante : ne pas créer de vertex
@@ -1332,7 +1426,7 @@ class MeshViewer {
         const material = new THREE.MeshBasicMaterial({
             vertexColors: true,
             side: THREE.DoubleSide,
-            flatShading: !this.mesh3DSmooth // Lissage selon le paramètre
+            flatShading: this.mesh3DSmoothingLevel === 0 // Lissage selon le paramètre
         });
         
         this.mesh3D = new THREE.Mesh(geometry, material);
@@ -2107,14 +2201,18 @@ class MeshViewer {
      */
     openMesh3DSettings() {
         const modal = document.getElementById('mesh3DSettingsModal');
-        const mesh3DSmooth = document.getElementById('mesh3DSmooth');
+        const mesh3DSmoothingLevel = document.getElementById('mesh3DSmoothingLevel');
+        const mesh3DSmoothingValue = document.getElementById('mesh3DSmoothingValue');
         const mesh3DZScale = document.getElementById('mesh3DZScale');
         const mesh3DZScaleValue = document.getElementById('mesh3DZScaleValue');
-        
+
         if (modal) {
             // Initialiser les valeurs actuelles
-            if (mesh3DSmooth) {
-                mesh3DSmooth.checked = this.mesh3DSmooth;
+            if (mesh3DSmoothingLevel) {
+                mesh3DSmoothingLevel.value = String(this.mesh3DSmoothingLevel);
+                if (mesh3DSmoothingValue) {
+                    mesh3DSmoothingValue.textContent = this.getMeshSmoothingLabel(this.mesh3DSmoothingLevel);
+                }
             }
             if (mesh3DZScale && mesh3DZScaleValue) {
                 mesh3DZScale.value = this.mesh3DZScale;
@@ -2134,21 +2232,81 @@ class MeshViewer {
             modal.classList.add('hidden');
         }
     }
-    
+
+    /**
+     * Charge les préférences utilisateur pour la vue 3D
+     */
+    loadMesh3DPreferences() {
+        if (typeof window === 'undefined' || !('localStorage' in window)) {
+            return;
+        }
+
+        try {
+            const stored = window.localStorage.getItem(this.mesh3DPreferencesKey);
+
+            if (!stored) {
+                return;
+            }
+
+            const parsed = JSON.parse(stored);
+
+            if (parsed && typeof parsed === 'object') {
+                if (Number.isInteger(parsed.smoothingLevel)) {
+                    const maxLevel = this.mesh3DSmoothingLabels.length - 1;
+                    this.mesh3DSmoothingLevel = Math.max(0, Math.min(maxLevel, parsed.smoothingLevel));
+                }
+
+                if (typeof parsed.zScale === 'number' && Number.isFinite(parsed.zScale)) {
+                    this.mesh3DZScale = Math.max(0.5, Math.min(10, parsed.zScale));
+                }
+            }
+        } catch (error) {
+            console.warn('Impossible de charger les préférences 3D du mesh viewer', error);
+        }
+    }
+
+    /**
+     * Enregistre les préférences utilisateur pour la vue 3D
+     */
+    saveMesh3DPreferences() {
+        if (typeof window === 'undefined' || !('localStorage' in window)) {
+            return;
+        }
+
+        try {
+            const payload = {
+                smoothingLevel: this.mesh3DSmoothingLevel,
+                zScale: this.mesh3DZScale
+            };
+            window.localStorage.setItem(this.mesh3DPreferencesKey, JSON.stringify(payload));
+        } catch (error) {
+            console.warn('Impossible d\'enregistrer les préférences 3D du mesh viewer', error);
+        }
+    }
+
     /**
      * Applique les paramètres 3D
      */
     applyMesh3DSettings() {
-        const mesh3DSmooth = document.getElementById('mesh3DSmooth');
+        const mesh3DSmoothingLevel = document.getElementById('mesh3DSmoothingLevel');
         const mesh3DZScale = document.getElementById('mesh3DZScale');
-        
-        if (mesh3DSmooth) {
-            this.mesh3DSmooth = mesh3DSmooth.checked;
+
+        if (mesh3DSmoothingLevel) {
+            const level = parseInt(mesh3DSmoothingLevel.value, 10);
+            if (!Number.isNaN(level)) {
+                const maxLevel = this.mesh3DSmoothingLabels.length - 1;
+                this.mesh3DSmoothingLevel = Math.max(0, Math.min(maxLevel, level));
+            }
         }
         if (mesh3DZScale) {
-            this.mesh3DZScale = parseFloat(mesh3DZScale.value);
+            const zScale = parseFloat(mesh3DZScale.value);
+            if (!Number.isNaN(zScale)) {
+                this.mesh3DZScale = Math.max(0.5, Math.min(10, zScale));
+            }
         }
-        
+
+        this.saveMesh3DPreferences();
+
         // Re-rendre le mesh avec les nouveaux paramètres
         if (this.meshData) {
             this.render3D(this.meshData);

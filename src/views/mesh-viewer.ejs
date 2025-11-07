@@ -345,32 +345,43 @@
             <div class="p-6 space-y-6">
                 <!-- Lissage du mesh -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
+                    <label for="mesh3DSmoothingLevel" class="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
                         Lissage du mesh
                     </label>
-                    <div class="flex items-center space-x-4">
-                        <span class="text-sm text-gray-600 dark:text-gray-400">Brut</span>
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" id="mesh3DSmooth" class="sr-only peer">
-                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-                        </label>
-                        <span class="text-sm text-gray-600 dark:text-gray-400">Lisse</span>
+                    <input
+                        type="range"
+                        id="mesh3DSmoothingLevel"
+                        min="0"
+                        max="4"
+                        step="1"
+                        value="2"
+                        class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                    >
+                    <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
+                        <span>Brut</span>
+                        <span>Léger</span>
+                        <span>Standard</span>
+                        <span>Doux</span>
+                        <span>Ultra</span>
                     </div>
-                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Activez le lissage pour un rendu plus doux</p>
+                    <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        Niveau sélectionné :
+                        <span id="mesh3DSmoothingValue" class="font-semibold text-blue-600 dark:text-blue-400">Standard</span>
+                    </p>
                 </div>
-                
+
                 <!-- Amplitude Z -->
                 <div>
                     <label for="mesh3DZScale" class="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
-                        Amplitude Z (hauteur): <span id="mesh3DZScaleValue" class="text-blue-600 dark:text-blue-400">2.0</span>
+                        Amplitude Z (hauteur): <span id="mesh3DZScaleValue" class="text-blue-600 dark:text-blue-400">1.0</span>
                     </label>
-                    <input 
-                        type="range" 
-                        id="mesh3DZScale" 
-                        min="0.5" 
-                        max="10" 
-                        step="0.1" 
-                        value="2" 
+                    <input
+                        type="range"
+                        id="mesh3DZScale"
+                        min="0.5"
+                        max="10"
+                        step="0.1"
+                        value="1"
                         class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
                     >
                     <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Ajuste l'amplitude verticale du mesh</p>
