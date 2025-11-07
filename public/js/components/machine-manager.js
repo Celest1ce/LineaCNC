@@ -410,47 +410,40 @@ class MachineManager {
         }
 
         const machine = this.machines.get(this.currentInfoMachine);
-        if (!machine?.isConnected || !machine.port) {
-            const message = 'Connectez la machine pour actualiser les informations.';
-            this.managerView?.setInfoModalError?.(message);
-            notificationManager.show(message, 'warning');
+        if (!machine) {
             return;
         }
 
-        if (this.infoRefreshInProgress) {
-            return;
-        }
-
-        this.infoRefreshInProgress = true;
         this.managerView?.setInfoRefreshState?.(true);
         this.managerView?.setInfoModalError?.(null);
 
         try {
-            const results = await this.collectInfoFromMachine(machine);
+            const { results } = await this.collectAndPersistMachineInfo(machine, { silent: false }) || {};
+
             if (!results || results.length === 0) {
-                this.managerView?.setInfoModalError?.('Aucune donnée renvoyée par la machine.');
-                notificationManager.show('Aucune donnée renvoyée par la machine.', 'warning');
+                const emptyMessage = 'Aucune donnée renvoyée par la machine.';
+                this.managerView?.setInfoModalError?.(emptyMessage);
+                notificationManager.show(emptyMessage, 'warning');
                 return;
             }
 
-            const response = await this.persistMachineInfo(machine, results);
-            if (response?.syncedAt) {
-                const date = new Date(response.syncedAt);
-                if (!Number.isNaN(date.getTime())) {
-                    machine.lastInfoSync = date;
-                    this.updateDisplay();
-                }
-            }
-            this.infoCache.delete(machine.id);
-            await this.fetchAndDisplayMachineInfo(machine, { bypassCache: true });
             notificationManager.show('Informations machine actualisées', 'success');
         } catch (error) {
             console.error('Erreur actualisation informations machine:', error);
-            const message = error.message || 'Impossible d\'actualiser les informations.';
+            let message = error.message || 'Impossible d\'actualiser les informations.';
+            let level = 'error';
+
+            if (error.code === 'MACHINE_DISCONNECTED') {
+                message = 'Connectez la machine pour actualiser les informations.';
+                level = 'warning';
+            } else if (error.code === 'INFO_SYNC_IN_PROGRESS') {
+                message = 'Une synchronisation des informations est déjà en cours.';
+                level = 'info';
+            }
+
             this.managerView?.setInfoModalError?.(message);
-            notificationManager.show('Erreur lors de la récupération des informations.', 'error');
+            notificationManager.show(message, level);
         } finally {
-            this.infoRefreshInProgress = false;
             this.managerView?.setInfoRefreshState?.(false);
         }
     }
@@ -612,55 +605,52 @@ class MachineManager {
             return;
         }
 
-        const results = [];
-        const processed = new Set();
-
-        if (initialInfo && Array.isArray(initialInfo.entries) && initialInfo.entries.length > 0) {
-            const normalizedCommand = (initialInfo.command || 'M990').toUpperCase();
-            processed.add(normalizedCommand);
-            results.push({
-                command: normalizedCommand,
-                rawOutput: initialInfo.rawOutput || this.parseInfoResponse(initialInfo.entries.map((entry) => `${entry.label}: ${entry.value}`)).rawOutput,
-                entries: initialInfo.entries,
-                capturedAt: new Date().toISOString()
-            });
-        }
-
-        const remainingCommands = Array.isArray(machine.infoCommands) && machine.infoCommands.length > 0
-            ? this.normalizeInfoCommands(machine.infoCommands, { allowEmpty: true }).filter((command) => !processed.has(command))
-            : [...DEFAULT_INFO_COMMANDS].filter((command) => !processed.has(command));
-
-        if (remainingCommands.length > 0) {
-            try {
-                const additionalResults = await this.collectInfoFromMachine(machine, remainingCommands);
-                additionalResults.forEach((result) => {
-                    if (result?.command) {
-                        processed.add(result.command);
-                    }
-                    results.push(result);
-                });
-            } catch (error) {
-                console.warn('Erreur lors de la collecte automatique des informations:', error);
-            }
-        }
-
-        if (results.length === 0) {
+        if (this.infoRefreshInProgress) {
             return;
         }
 
-        const response = await this.persistMachineInfo(machine, results, { silent: true });
-        if (response?.syncedAt) {
-            const date = new Date(response.syncedAt);
-            if (!Number.isNaN(date.getTime())) {
-                machine.lastInfoSync = date;
-                this.updateDisplay();
+        this.infoRefreshInProgress = true;
+
+        try {
+            const results = [];
+            const processed = new Set();
+
+            if (initialInfo && Array.isArray(initialInfo.entries) && initialInfo.entries.length > 0) {
+                const normalizedCommand = (initialInfo.command || 'M990').toUpperCase();
+                processed.add(normalizedCommand);
+                results.push({
+                    command: normalizedCommand,
+                    rawOutput: initialInfo.rawOutput || this.parseInfoResponse(initialInfo.entries.map((entry) => `${entry.label}: ${entry.value}`)).rawOutput,
+                    entries: initialInfo.entries,
+                    capturedAt: new Date().toISOString()
+                });
             }
-        }
 
-        this.infoCache.delete(machine.id);
+            const remainingCommands = Array.isArray(machine.infoCommands) && machine.infoCommands.length > 0
+                ? this.normalizeInfoCommands(machine.infoCommands, { allowEmpty: true }).filter((command) => !processed.has(command))
+                : [...DEFAULT_INFO_COMMANDS].filter((command) => !processed.has(command));
 
-        if (this.currentInfoMachine === machine.id) {
-            await this.fetchAndDisplayMachineInfo(machine, { bypassCache: true });
+            if (remainingCommands.length > 0) {
+                try {
+                    const additionalResults = await this.collectInfoFromMachine(machine, remainingCommands);
+                    additionalResults.forEach((result) => {
+                        if (result?.command) {
+                            processed.add(result.command);
+                        }
+                        results.push(result);
+                    });
+                } catch (error) {
+                    console.warn('Erreur lors de la collecte automatique des informations:', error);
+                }
+            }
+
+            if (results.length === 0) {
+                return;
+            }
+
+            await this.persistAndUpdateInfo(machine, results, { silent: true });
+        } finally {
+            this.infoRefreshInProgress = false;
         }
     }
 
@@ -702,9 +692,69 @@ class MachineManager {
             console.error('Erreur enregistrement informations machine:', error);
             if (!silent) {
                 notificationManager.show('Erreur lors de l\'enregistrement des informations machine.', 'error');
-                throw error;
             }
+            if (!error.code) {
+                error.code = 'MACHINE_INFO_PERSIST_FAILED';
+            }
+            throw error;
+        }
+    }
+
+    async persistAndUpdateInfo(machine, commandResults, { silent = false } = {}) {
+        if (!machine || !Array.isArray(commandResults) || commandResults.length === 0) {
             return null;
+        }
+
+        const response = await this.persistMachineInfo(machine, commandResults, { silent });
+
+        if (response?.syncedAt) {
+            const date = new Date(response.syncedAt);
+            if (!Number.isNaN(date.getTime())) {
+                machine.lastInfoSync = date;
+                this.updateDisplay();
+            }
+        }
+
+        this.infoCache.delete(machine.id);
+
+        if (this.currentInfoMachine === machine.id) {
+            await this.fetchAndDisplayMachineInfo(machine, { bypassCache: true });
+        }
+
+        return response;
+    }
+
+    async collectAndPersistMachineInfo(machine, { silent = false } = {}) {
+        if (!machine || !machine.uuid) {
+            return null;
+        }
+
+        if (!machine.isConnected || !machine.port) {
+            const error = new Error('Machine non connectée');
+            error.code = 'MACHINE_DISCONNECTED';
+            throw error;
+        }
+
+        if (this.infoRefreshInProgress) {
+            const error = new Error('Une synchronisation est déjà en cours.');
+            error.code = 'INFO_SYNC_IN_PROGRESS';
+            throw error;
+        }
+
+        this.infoRefreshInProgress = true;
+
+        try {
+            const results = await this.collectInfoFromMachine(machine);
+
+            if (!Array.isArray(results) || results.length === 0) {
+                return { results: [], response: null };
+            }
+
+            const response = await this.persistAndUpdateInfo(machine, results, { silent });
+
+            return { results, response };
+        } finally {
+            this.infoRefreshInProgress = false;
         }
     }
 
@@ -1108,10 +1158,10 @@ class MachineManager {
     }
 
     async saveMachineToDB(machine) {
-        try {
-            const portName = machine.lastKnownPortDescriptor
-                || (machine.port ? this.describePort(machine.port) : 'unknown');
+        const portName = machine.lastKnownPortDescriptor
+            || (machine.port ? this.describePort(machine.port) : machine.port || null);
 
+        try {
             const response = await fetch('/api/machines', {
                 method: 'POST',
                 headers: {
@@ -1127,12 +1177,18 @@ class MachineManager {
                 })
             });
 
-            const data = await response.json();
-            if (data.success) {
-                console.log('Machine sauvegardée en BDD:', machine.uuid);
+            const payload = await response.json();
+
+            if (!response.ok || payload.success !== true) {
+                const error = new Error(payload?.error || 'Erreur lors de la sauvegarde de la machine.');
+                error.code = 'MACHINE_SAVE_FAILED';
+                throw error;
             }
+
+            return payload;
         } catch (error) {
             console.error('Erreur sauvegarde machine en BDD:', error);
+            throw error;
         }
     }
 
@@ -1867,51 +1923,76 @@ class MachineManager {
         const machine = this.machines.get(machineId);
         if (!machine) return;
 
-        const oldBaudRate = machine.baudRate;
+        const previousName = machine.name;
+        const previousBaudRate = machine.baudRate;
+        const previousCommands = Array.isArray(machine.infoCommands) ? [...machine.infoCommands] : [];
+
         machine.name = name;
         machine.baudRate = baudRate;
+
         const normalizedCommands = this.normalizeInfoCommands(infoCommands || machine.infoCommands);
-        const commandsChanged = JSON.stringify(normalizedCommands) !== JSON.stringify(machine.infoCommands);
+        const commandsChanged = JSON.stringify(normalizedCommands) !== JSON.stringify(previousCommands);
         machine.infoCommands = normalizedCommands;
         if (commandsChanged) {
             this.infoCache.delete(machineId);
         }
 
-        // Si la machine est connectée et que le baud rate a changé, fermer et rouvrir
-        if (machine.isConnected && oldBaudRate !== baudRate) {
+        if (machine.isConnected && previousBaudRate !== baudRate) {
             try {
-                // Arrêter les readers actifs
                 if (this.readers.has(machineId)) {
                     await this.stopReadingSerial(machineId);
                 }
 
-                // Fermer le port
                 await machine.port.close();
-                
-                // Attendre un peu avant de rouvrir
-                await new Promise(resolve => setTimeout(resolve, 500));
-                
-                // Rouvrir avec le nouveau baud rate
-                await machine.port.open({ baudRate: baudRate });
-                
-                notificationManager.show(`Machine ${name} mise à jour`, 'success');
+                await new Promise((resolve) => setTimeout(resolve, 500));
+                await machine.port.open({ baudRate });
             } catch (error) {
                 console.error('Erreur lors de la mise à jour:', error);
                 machine.status = 'error';
                 machine.isConnected = false;
-                notificationManager.show('Erreur lors de la mise à jour', 'error');
+                notificationManager.show('Erreur lors de la mise à jour du port série.', 'error');
+                this.updateDisplay();
+                return;
             }
-        } else {
-            // Si seulement le nom a changé, pas besoin de fermer/rouvrir
-            notificationManager.show(`Machine ${name} mise à jour`, 'success');
         }
 
-        // Sauvegarder en BDD si UUID présent
         if (machine.uuid) {
-            await this.saveMachineToDB(machine);
+            try {
+                await this.saveMachineToDB(machine);
+            } catch (error) {
+                notificationManager.show('Impossible d\'enregistrer la machine.', 'error');
+                machine.name = previousName;
+                machine.baudRate = previousBaudRate;
+                machine.infoCommands = previousCommands;
+                this.updateDisplay();
+                return;
+            }
         }
 
         this.updateDisplay();
+        notificationManager.show(`Machine ${name} mise à jour`, 'success');
+
+        if (machine.isConnected && machine.port) {
+            try {
+                const syncResult = await this.collectAndPersistMachineInfo(machine, { silent: true });
+                if (!syncResult || !Array.isArray(syncResult.results) || syncResult.results.length === 0) {
+                    if (commandsChanged) {
+                        notificationManager.show('Commandes enregistrées mais aucune donnée n\'a été renvoyée.', 'warning');
+                    }
+                }
+            } catch (error) {
+                console.error('Erreur lors de la synchronisation après mise à jour:', error);
+                if (commandsChanged) {
+                    if (error.code === 'INFO_SYNC_IN_PROGRESS') {
+                        notificationManager.show('Une synchronisation des informations est déjà en cours.', 'info');
+                    } else {
+                        notificationManager.show('Les commandes sont enregistrées mais la récupération des informations a échoué.', 'warning');
+                    }
+                }
+            }
+        } else if (commandsChanged) {
+            notificationManager.show('Commandes enregistrées. Connectez la machine pour synchroniser les informations.', 'info');
+        }
     }
 
     async disconnectMachine(machineId) {
