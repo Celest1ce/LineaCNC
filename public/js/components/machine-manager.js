@@ -529,7 +529,9 @@ class MachineManager {
                 baudRate: 115200,
                 isConnected: false,
                 uuid: null,
-                needsAuthorization: false
+                needsAuthorization: false,
+                lastKnownPortDescriptor: null,
+                legacyPortDescriptor: null
             };
 
             this.machines.set(machineId, machine);
@@ -546,10 +548,12 @@ class MachineManager {
                 machine.name = detectedInfo.machineName;
             }
 
+            this.rememberPortDescriptor(machine, port);
+
             await this.saveMachineToDB(machine);
             await this.finalizeReadyState(machine, port, `Machine ${machine.name} prête`);
         } catch (error) {
-            console.error('Erreur lors de l'ajout de la machine:', error);
+            console.error("Erreur lors de l'ajout de la machine:", error);
 
             if (machineId && this.machines.has(machineId)) {
                 this.machines.delete(machineId);
@@ -559,7 +563,7 @@ class MachineManager {
 
             await this.safeClosePort(port);
 
-            let message = 'Erreur: Impossible d'ajouter la machine';
+            let message = "Erreur: Impossible d'ajouter la machine";
             if (error?.message) {
                 message = error.message;
             }
@@ -653,9 +657,9 @@ class MachineManager {
 
     async saveMachineToDB(machine) {
         try {
-            const portInfo = machine.port.getInfo();
-            const portName = portInfo.usbProductId ? `COM${portInfo.usbProductId}` : 'unknown';
-            
+            const portName = machine.lastKnownPortDescriptor
+                || (machine.port ? this.describePort(machine.port) : 'unknown');
+
             const response = await fetch('/api/machines', {
                 method: 'POST',
                 headers: {
@@ -681,14 +685,14 @@ class MachineManager {
 
     async updatePortInDB(machine) {
         try {
-            if (!machine.port) {
-                console.log('Port null, pas de mise à jour BDD');
+            if (!machine.port && !machine.lastKnownPortDescriptor) {
+                console.log('Port inconnu, pas de mise à jour BDD');
                 return;
             }
-            
-            const portInfo = machine.port.getInfo();
-            const portName = portInfo.usbProductId ? `COM${portInfo.usbProductId}` : 'unknown';
-            
+
+            const portName = machine.lastKnownPortDescriptor
+                || (machine.port ? this.describePort(machine.port) : 'unknown');
+
             const response = await fetch('/api/machines', {
                 method: 'POST',
                 headers: {
@@ -762,7 +766,9 @@ class MachineManager {
                     baudRate: dbMachine.baud_rate || 115200,
                     isConnected: false,
                     lastError: null,
-                    needsAuthorization: false
+                    needsAuthorization: false,
+                    lastKnownPortDescriptor: dbMachine.port || dbMachine.last_port || null,
+                    legacyPortDescriptor: dbMachine.port || dbMachine.last_port || null
                 };
                 
                 // Ajouter à la liste (remplace si existant)
@@ -991,6 +997,144 @@ class MachineManager {
         return machine;
     }
 
+    describePort(port) {
+        if (!port || typeof port.getInfo !== 'function') {
+            return 'unknown';
+        }
+
+        try {
+            const info = port.getInfo();
+            const vendor = typeof info.usbVendorId === 'number'
+                ? info.usbVendorId.toString(16).padStart(4, '0')
+                : null;
+            const product = typeof info.usbProductId === 'number'
+                ? info.usbProductId.toString(16).padStart(4, '0')
+                : null;
+            const serialNumber = port?.serialNumber ? String(port.serialNumber) : null;
+
+            const segments = [];
+            if (vendor) segments.push(`v${vendor}`);
+            if (product) segments.push(`p${product}`);
+            if (serialNumber) segments.push(`s${serialNumber}`);
+
+            return segments.length ? segments.join(':') : 'unknown';
+        } catch (error) {
+            console.warn('Impossible de récupérer les informations du port:', error);
+            return 'unknown';
+        }
+    }
+
+    rememberPortDescriptor(machine, port) {
+        if (!machine) {
+            return 'unknown';
+        }
+
+        const descriptor = this.describePort(port);
+        machine.lastKnownPortDescriptor = descriptor;
+        machine.legacyPortDescriptor = descriptor;
+        return descriptor;
+    }
+
+    getKnownPortDescriptors(machine) {
+        const descriptors = [];
+        if (machine?.lastKnownPortDescriptor) {
+            descriptors.push(machine.lastKnownPortDescriptor);
+        }
+        if (machine?.legacyPortDescriptor && machine.legacyPortDescriptor !== machine?.lastKnownPortDescriptor) {
+            descriptors.push(machine.legacyPortDescriptor);
+        }
+        return descriptors;
+    }
+
+    matchesPortDescriptor(port, descriptor) {
+        if (!descriptor || descriptor === 'unknown') {
+            return false;
+        }
+
+        const normalizedDescriptor = descriptor.toString().toLowerCase();
+        const currentDescriptor = this.describePort(port).toLowerCase();
+
+        if (currentDescriptor !== 'unknown' && currentDescriptor === normalizedDescriptor) {
+            return true;
+        }
+
+        if (normalizedDescriptor.startsWith('com')) {
+            const info = port.getInfo();
+            const legacyName = info.usbProductId ? `com${info.usbProductId}`.toLowerCase() : 'unknown';
+            return legacyName === normalizedDescriptor;
+        }
+
+        return false;
+    }
+
+    isPortInUse(port) {
+        for (const trackedPort of this.ports.values()) {
+            if (trackedPort === port) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    filterAvailablePorts(ports) {
+        return ports.filter((port) => !this.isPortInUse(port));
+    }
+
+    prioritizePorts(machine, ports) {
+        if (!Array.isArray(ports)) {
+            return [];
+        }
+
+        const descriptors = this.getKnownPortDescriptors(machine);
+        if (!descriptors.length) {
+            return [...ports];
+        }
+
+        const matched = [];
+        const others = [];
+
+        ports.forEach((port) => {
+            const isMatch = descriptors.some((descriptor) => this.matchesPortDescriptor(port, descriptor));
+            if (isMatch) {
+                matched.push(port);
+            } else {
+                others.push(port);
+            }
+        });
+
+        return [...matched, ...others];
+    }
+
+    async listAuthorizedPorts() {
+        if (!('serial' in navigator)) {
+            return [];
+        }
+
+        try {
+            return await navigator.serial.getPorts();
+        } catch (error) {
+            console.warn('Impossible de récupérer les ports autorisés:', error);
+            return [];
+        }
+    }
+
+    async connectUsingAuthorizedPorts(machine) {
+        const ports = await this.listAuthorizedPorts();
+        const hadPorts = ports.length > 0;
+        const availablePorts = this.filterAvailablePorts(ports);
+        const hadAvailablePorts = availablePorts.length > 0;
+        const orderedPorts = this.prioritizePorts(machine, availablePorts);
+
+        for (const port of orderedPorts) {
+            const success = await this.connectMachineWithPort(machine, port);
+            if (success) {
+                return { connected: true, hadPorts, hadAvailablePorts };
+            }
+        }
+
+        return { connected: false, hadPorts, hadAvailablePorts };
+    }
+
     async finalizeReadyState(machine, port, notificationMessage) {
         if (!machine) return false;
 
@@ -1006,6 +1150,8 @@ class MachineManager {
         machine.needsAuthorization = false;
         machine.lastSeen = new Date();
         this.ports.set(machine.id, port);
+
+        this.rememberPortDescriptor(machine, port);
 
         this.startConnectionMonitoring(machine.id);
         this.startReadingSerial(machine.id);
@@ -1146,12 +1292,14 @@ class MachineManager {
         }
         
         try {
-            // Demander l'autorisation utilisateur
+            const { connected } = await this.connectUsingAuthorizedPorts(machine);
+            if (connected) {
+                return;
+            }
+
             const port = await navigator.serial.requestPort();
-            
-            // Une fois autorisé, connecter automatiquement
             await this.connectMachineWithPort(machine, port);
-            
+
         } catch (error) {
             if (error.name === 'NotAllowedError') {
                 notificationManager.show('Autorisation refusée', 'warning');
@@ -1187,27 +1335,25 @@ class MachineManager {
         }
 
         try {
-            const ports = await navigator.serial.getPorts();
+            const { connected, hadPorts, hadAvailablePorts } = await this.connectUsingAuthorizedPorts(machine);
 
-            if (!ports.length) {
+            if (connected) {
+                return;
+            }
+
+            if (!hadPorts) {
                 machine.needsAuthorization = true;
                 this.updateDisplay();
                 notificationManager.show('Aucun port autorisé disponible', 'warning');
                 return;
             }
 
-            let connected = false;
-            for (const port of ports) {
-                const success = await this.connectMachineWithPort(machine, port);
-                if (success) {
-                    connected = true;
-                    break;
-                }
+            if (!hadAvailablePorts) {
+                notificationManager.show('Tous les ports autorisés sont déjà utilisés', 'warning');
+                return;
             }
 
-            if (!connected) {
-                notificationManager.show('Impossible de connecter la machine avec les ports autorisés', 'warning');
-            }
+            notificationManager.show('Impossible de connecter la machine avec les ports autorisés', 'warning');
         } catch (error) {
             console.error('Erreur:', error);
             this.handleConnectionError(machine, error);
@@ -1216,84 +1362,27 @@ class MachineManager {
 
     async tryReconnectMachine(dbMachine) {
         try {
-            // Vérifier si l'API Web Serial est supportée
             if (!('serial' in navigator)) {
                 return;
             }
 
-            // Demander l'accès aux ports série
-            const ports = await navigator.serial.getPorts();
-            
-            // Chercher le port correspondant au dernier port utilisé
-            let targetPort = null;
-            if (dbMachine.last_port) {
-                // Essayer de trouver le port par son nom
-                for (const port of ports) {
-                    const info = port.getInfo();
-                    const portName = info.usbProductId ? `COM${info.usbProductId}` : 'unknown';
-                    if (portName === dbMachine.last_port) {
-                        targetPort = port;
-                        break;
-                    }
-                }
-            }
-
-            // Si aucun port correspondant, prendre le premier disponible
-            if (!targetPort && ports.length > 0) {
-                targetPort = ports[0];
-            }
-
-            if (!targetPort) {
-                console.log('Aucun port disponible pour', dbMachine.name);
+            const machine = this.findMachineByUUID(dbMachine.uuid);
+            if (!machine || machine.isConnected) {
                 return;
             }
 
-            // Ouvrir le port
-            await targetPort.open({ baudRate: dbMachine.baud_rate });
-            
-            // Générer un ID unique pour la machine
-            const machineId = 'machine_' + Date.now();
-            
-            // Créer l'objet machine
-            const machine = {
-                id: machineId,
-                name: dbMachine.name,
-                port: targetPort,
-                status: 'connecting',
-                lastSeen: new Date(),
-                baudRate: dbMachine.baud_rate,
-                isConnected: false,
-                uuid: dbMachine.uuid
-            };
+            const descriptor = dbMachine.port || dbMachine.last_port || null;
+            if (descriptor && !machine.lastKnownPortDescriptor) {
+                machine.lastKnownPortDescriptor = descriptor;
+            }
+            if (descriptor && !machine.legacyPortDescriptor) {
+                machine.legacyPortDescriptor = descriptor;
+            }
 
-            // Ajouter à la liste
-            this.machines.set(machineId, machine);
-            this.ports.set(machineId, targetPort);
-
-            // Mettre à jour l'affichage
-            this.updateDisplay();
-
-            // Simuler la connexion
-            setTimeout(async () => {
-                machine.status = 'connected';
-                machine.isConnected = true;
-                machine.lastSeen = new Date();
-                
-                // Démarrer le monitoring de connexion
-                this.startConnectionMonitoring(machineId);
-                
-                // Démarrer la lecture en arrière-plan
-                this.startReadingSerial(machineId);
-                
-                // Mettre à jour le port COM dans la BDD
-                if (machine.uuid) {
-                    await this.updatePortInDB(machine);
-                }
-                
-                this.updateDisplay();
+            const { connected } = await this.connectUsingAuthorizedPorts(machine);
+            if (connected) {
                 notificationManager.show(`Machine ${machine.name} reconnectée automatiquement`, 'success');
-            }, 2000);
-
+            }
         } catch (error) {
             console.error('Erreur reconnexion automatique:', error);
         }
@@ -1406,27 +1495,17 @@ class MachineManager {
             machine.status = 'connecting';
             this.updateDisplay();
 
-            // Arrêter le monitoring et la lecture
             this.stopConnectionMonitoring(machineId);
             if (this.readers.has(machineId)) {
-                    await this.stopReadingSerial(machineId);
-                }
+                await this.stopReadingSerial(machineId);
+            }
 
-            // Nettoyer l'ancien port s'il existe
             if (machine.port) {
-                try {
-                    // Essayer de fermer le port proprement
-                    if (machine.port.readable) {
-                await machine.port.close();
-                    }
-            } catch (error) {
-                console.log('Port déjà fermé ou erreur lors de la fermeture:', error);
+                await this.safeClosePort(machine.port);
             }
-                // Attendre un peu pour s'assurer que le port est libéré
-                await new Promise(resolve => setTimeout(resolve, 300));
-            }
+            machine.port = null;
+            this.ports.delete(machineId);
 
-            // Vérifier si l'API Web Serial est supportée
             if (!('serial' in navigator)) {
                 notificationManager.show('Web Serial API non supportée par ce navigateur', 'error');
                 machine.status = 'disconnected';
@@ -1434,59 +1513,26 @@ class MachineManager {
                 return;
             }
 
-            // Demander un nouveau port (l'utilisateur doit sélectionner)
+            const { connected, hadAvailablePorts } = await this.connectUsingAuthorizedPorts(machine);
+            if (connected) {
+                return;
+            }
+
+            if (!hadAvailablePorts) {
+                notificationManager.show('Sélectionnez un port série pour reconnecter la machine', 'info');
+            }
+
             const port = await navigator.serial.requestPort();
-
-            // Ouvrir le nouveau port
-            await port.open({ baudRate: machine.baudRate });
-
-            // Mettre à jour les références
-            machine.port = port;
-            this.ports.set(machineId, port);
-
-            // Mettre à jour l'affichage
-            this.updateDisplay();
-
-            // Simuler la reconnexion
-            setTimeout(async () => {
-                machine.status = 'connected';
-                machine.isConnected = true;
-                machine.lastSeen = new Date();
-                
-                // Démarrer le monitoring de connexion
-                this.startConnectionMonitoring(machineId);
-                
-                // Démarrer la lecture en arrière-plan
-                this.startReadingSerial(machineId);
-                
-                // Mettre à jour le port COM dans la BDD
-                if (machine.uuid) {
-                    await this.updatePortInDB(machine);
-                }
-                
-                this.updateDisplay();
-                notificationManager.show(`Machine ${machine.name} reconnectée`, 'success');
-            }, 2000);
-
+            await this.connectMachineWithPort(machine, port);
         } catch (error) {
             console.error('Erreur de reconnexion:', error);
-            
-            // Nettoyer en cas d'erreur
-            if (machine.port) {
-                try {
-                    if (machine.port.readable) {
-                        await machine.port.close();
-                    }
-                } catch (closeError) {
-                    // Ignorer les erreurs de fermeture
-                }
-                machine.port = null;
-            }
-            
+
             machine.status = 'disconnected';
             machine.isConnected = false;
+            machine.port = null;
+            this.ports.delete(machineId);
             this.updateDisplay();
-            
+
             if (error.name === 'NotFoundError') {
                 notificationManager.show('Aucun port série trouvé', 'error');
             } else if (error.name === 'NotAllowedError') {
