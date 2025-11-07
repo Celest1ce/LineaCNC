@@ -27,7 +27,7 @@ const config = {
     'pages/dashboard.js',
     'main.js'
   ],
-  distDir: path.join(__dirname, '..', 'dist', 'js'),
+  distDir: path.join(__dirname, 'bundle'),
   bundleName: 'lineacnc.bundle.js',
   minifiedName: 'lineacnc.bundle.min.js'
 };
