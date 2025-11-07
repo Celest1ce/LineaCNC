@@ -203,7 +203,9 @@ async function closeDatabase() {
 }
 
 async function ensureColumn(connection, table, column, alterQuery) {
-  const [columns] = await connection.execute(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, [column]);
+  // Les instructions SHOW ne supportent pas les requêtes préparées. Nous utilisons donc
+  // connection.query pour bénéficier de l'échappement automatique.
+  const [columns] = await connection.query('SHOW COLUMNS FROM ?? LIKE ?', [table, column]);
   if (columns.length === 0) {
     await connection.execute(alterQuery);
     console.log(`ℹ️ Colonne ${column} ajoutée à ${table}`);
@@ -211,7 +213,7 @@ async function ensureColumn(connection, table, column, alterQuery) {
 }
 
 async function ensureUniqueIndex(connection, table, indexName, alterQuery) {
-  const [indexes] = await connection.execute(`SHOW INDEX FROM \`${table}\` WHERE Key_name = ?`, [indexName]);
+  const [indexes] = await connection.query('SHOW INDEX FROM ?? WHERE Key_name = ?', [table, indexName]);
   if (indexes.length === 0) {
     await connection.execute(alterQuery);
     console.log(`ℹ️ Index unique ${indexName} ajouté à ${table}`);
