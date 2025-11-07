@@ -35,11 +35,22 @@ const changePasswordSchema = Joi.object({
   confirmPassword: Joi.string().required()
 });
 
+const commandSchema = Joi.string()
+  .trim()
+  .min(1)
+  .max(64)
+  .pattern(/^[\w\-#/\. ]+$/i, 'commande valide');
+
 const machineSchema = Joi.object({
   uuid: Joi.string().trim().guid({ version: 'uuidv4' }).required(),
   name: Joi.string().trim().min(2).max(100).required(),
   baudRate: Joi.number().integer().min(1).max(1000000).optional(),
-  port: Joi.string().trim().max(100).allow(null, '').optional()
+  port: Joi.string().trim().max(100).allow(null, '').optional(),
+  infoCommands: Joi.array()
+    .items(commandSchema)
+    .min(1)
+    .max(10)
+    .optional()
 });
 
 module.exports = {

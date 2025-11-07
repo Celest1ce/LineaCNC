@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { executeQuery } = require('../config/database');
+const { randomUUID } = require('crypto');
+const { executeQuery, getConnection } = require('../config/database');
 const { requireAuth } = require('../middleware/auth');
 const {
   logUserAction,
@@ -12,6 +13,14 @@ const {
   changePasswordSchema,
   machineSchema
 } = require('../validation/schemas');
+const {
+  DEFAULT_INFO_COMMANDS,
+  normalizeInfoCommands,
+  parseInfoCommands,
+  normalizeParameterName,
+  inferDataType,
+  normalizeValueForType
+} = require('../utils/machine-info');
 
 const router = express.Router();
 
@@ -191,6 +200,10 @@ router.post('/api/machines', requireAuth, async (req, res) => {
     }
 
     const { uuid, name, baudRate, port } = value;
+    const providedCommands = Array.isArray(value.infoCommands) ? value.infoCommands : undefined;
+    const normalizedCommands = providedCommands ? normalizeInfoCommands(providedCommands) : null;
+    const commandsJson = normalizedCommands ? JSON.stringify(normalizedCommands) : null;
+    const commandsForInsert = commandsJson || JSON.stringify(DEFAULT_INFO_COMMANDS);
     const userId = req.session.user.id;
 
     const existing = await executeQuery(
@@ -199,26 +212,42 @@ router.post('/api/machines', requireAuth, async (req, res) => {
     );
 
     if (existing.length > 0) {
-      await executeQuery(
-        'UPDATE machines SET name = ?, baud_rate = ?, last_port = ?, updated_at = NOW() WHERE uuid = ? AND user_id = ?',
-        [name, baudRate || 115200, port, uuid, userId]
-      );
+      let updateQuery = 'UPDATE machines SET name = ?, baud_rate = ?, last_port = ?';
+      const params = [name, baudRate || 115200, port || null];
+
+      if (commandsJson !== null) {
+        updateQuery += ', info_commands = ?';
+        params.push(commandsJson);
+      }
+
+      updateQuery += ', updated_at = NOW() WHERE uuid = ? AND user_id = ?';
+      params.push(uuid, userId);
+
+      await executeQuery(updateQuery, params);
       await logUserAction('machine_updated', `Machine ${uuid} mise à jour`, req, {
         userId,
         uuid
       });
-      return res.json({ success: true, message: 'Machine mise à jour' });
+      return res.json({
+        success: true,
+        message: 'Machine mise à jour',
+        infoCommands: normalizedCommands || undefined
+      });
     }
 
     await executeQuery(
-      'INSERT INTO machines (user_id, uuid, name, baud_rate, last_port) VALUES (?, ?, ?, ?, ?)',
-      [userId, uuid, name, baudRate || 115200, port]
+      'INSERT INTO machines (user_id, uuid, name, baud_rate, last_port, info_commands) VALUES (?, ?, ?, ?, ?, ?)',
+      [userId, uuid, name, baudRate || 115200, port || null, commandsForInsert]
     );
     await logUserAction('machine_created', `Machine ${uuid} créée`, req, {
       userId,
       uuid
     });
-    return res.json({ success: true, message: 'Machine enregistrée' });
+    return res.json({
+      success: true,
+      message: 'Machine enregistrée',
+      infoCommands: JSON.parse(commandsForInsert)
+    });
   } catch (error) {
     console.error('Erreur sauvegarde machine:', error);
     await logError('machine_save_failed', error.message, req);
@@ -231,13 +260,288 @@ router.get('/api/machines', requireAuth, async (req, res) => {
   try {
     const userId = req.session.user.id;
     const machines = await executeQuery(
-      'SELECT id, uuid, name, baud_rate, last_port, created_at, updated_at FROM machines WHERE user_id = ?',
+      'SELECT id, uuid, name, baud_rate, last_port, info_commands, info_synced_at, created_at, updated_at FROM machines WHERE user_id = ?',
       [userId]
     );
-    res.json(machines);
+
+    const normalizedMachines = machines.map((machine) => {
+      const infoCommands = parseInfoCommands(machine.info_commands, { allowEmpty: true });
+      const infoSyncedAt = machine.info_synced_at;
+      const portDescriptor = machine.last_port || null;
+
+      return {
+        id: machine.id,
+        uuid: machine.uuid,
+        name: machine.name,
+        baudRate: machine.baud_rate,
+        lastPort: portDescriptor,
+        port: portDescriptor,
+        infoCommands,
+        infoSyncedAt,
+        createdAt: machine.created_at,
+        updatedAt: machine.updated_at
+      };
+    });
+
+    res.json(normalizedMachines);
   } catch (error) {
     console.error('Erreur récupération machines:', error);
     res.status(500).json({ error: 'Erreur lors de la récupération' });
+  }
+});
+
+router.get('/api/machines/:uuid/info', requireAuth, async (req, res) => {
+  const { uuid } = req.params;
+  const userId = req.session.user.id;
+
+  try {
+    const machines = await executeQuery(
+      'SELECT id, name, info_commands, info_synced_at FROM machines WHERE uuid = ? AND user_id = ?',
+      [uuid, userId]
+    );
+
+    if (machines.length === 0) {
+      return res.status(404).json({ error: 'Machine non trouvée' });
+    }
+
+    const machine = machines[0];
+    const infoCommands = parseInfoCommands(machine.info_commands, { allowEmpty: true });
+
+    let connection;
+
+    try {
+      connection = await getConnection();
+
+      const [batches] = await connection.execute(
+        `SELECT batch_id, MAX(captured_at) AS captured_at
+         FROM machine_info_values
+         WHERE machine_id = ?
+         GROUP BY batch_id
+         ORDER BY captured_at DESC
+         LIMIT 1`,
+        [machine.id]
+      );
+
+      if (batches.length === 0) {
+        return res.json({
+          machine: {
+            uuid,
+            name: machine.name,
+            infoCommands,
+            infoSyncedAt: machine.info_synced_at
+          },
+          syncedAt: null,
+          commandResults: []
+        });
+      }
+
+      const batch = batches[0];
+
+      const [rows] = await connection.execute(
+        `SELECT
+           v.id,
+           v.command,
+           v.raw_key,
+           v.raw_value,
+           v.raw_output,
+           v.captured_at,
+           v.position,
+           v.command_index,
+           p.parameter_name,
+           p.data_type,
+           p.normalized_value
+         FROM machine_info_values v
+         LEFT JOIN machine_info_parameters p ON p.info_value_id = v.id
+         WHERE v.machine_id = ? AND v.batch_id = ?
+         ORDER BY v.command_index ASC, v.position ASC, v.id ASC`,
+        [machine.id, batch.batch_id]
+      );
+
+      const commandMap = new Map();
+
+      rows.forEach((row) => {
+        const key = `${row.command_index}:${row.command}`;
+        if (!commandMap.has(key)) {
+          commandMap.set(key, {
+            command: row.command,
+            rawOutput: row.raw_output || null,
+            capturedAt: row.captured_at,
+            commandIndex: row.command_index,
+            entries: []
+          });
+        }
+
+        const group = commandMap.get(key);
+
+        if (!group.rawOutput && row.raw_output) {
+          group.rawOutput = row.raw_output;
+        }
+
+        group.entries.push({
+          id: row.id,
+          label: row.raw_key,
+          value: row.raw_value,
+          position: row.position,
+          parameter: row.parameter_name
+            ? {
+                name: row.parameter_name,
+                dataType: row.data_type,
+                normalizedValue: row.normalized_value
+              }
+            : null
+        });
+      });
+
+      const commandResults = Array.from(commandMap.values())
+        .sort((a, b) => a.commandIndex - b.commandIndex)
+        .map(({ commandIndex, ...rest }) => rest);
+
+      return res.json({
+        machine: {
+          uuid,
+          name: machine.name,
+          infoCommands,
+          infoSyncedAt: machine.info_synced_at
+        },
+        syncedAt: batch.captured_at,
+        commandResults
+      });
+    } catch (error) {
+      console.error('Erreur lors de la lecture des informations machine:', error);
+      await logError('machine_info_fetch_failed', error.message, req, { uuid });
+      return res.status(500).json({ error: 'Erreur lors de la récupération des informations' });
+    } finally {
+      if (connection) {
+        connection.release();
+      }
+    }
+  } catch (error) {
+    console.error('Erreur récupération info machine:', error);
+    await logError('machine_info_fetch_failed', error.message, req, { uuid });
+    res.status(500).json({ error: 'Erreur lors de la récupération des informations' });
+  }
+});
+
+router.post('/api/machines/:uuid/info', requireAuth, async (req, res) => {
+  const { uuid } = req.params;
+  const { commandResults } = req.body || {};
+  const userId = req.session.user.id;
+
+  if (!Array.isArray(commandResults) || commandResults.length === 0) {
+    return res.status(400).json({ error: 'Aucune donnée fournie' });
+  }
+
+  try {
+    const machines = await executeQuery(
+      'SELECT id FROM machines WHERE uuid = ? AND user_id = ?',
+      [uuid, userId]
+    );
+
+    if (machines.length === 0) {
+      return res.status(404).json({ error: 'Machine non trouvée' });
+    }
+
+    const machineId = machines[0].id;
+    const connection = await getConnection();
+    const batchId = randomUUID();
+    const now = new Date();
+    let inserted = 0;
+    let latestCapture = now;
+
+    try {
+      await connection.beginTransaction();
+
+      for (let i = 0; i < commandResults.length; i += 1) {
+        const commandResult = commandResults[i] || {};
+        const commandName = typeof commandResult.command === 'string' && commandResult.command.trim()
+          ? commandResult.command.trim().toUpperCase()
+          : `COMMAND_${i + 1}`;
+        const rawOutput = typeof commandResult.rawOutput === 'string' ? commandResult.rawOutput : null;
+        const capturedAtCandidate = commandResult.capturedAt ? new Date(commandResult.capturedAt) : now;
+        const safeCapturedAt = Number.isNaN(capturedAtCandidate.getTime()) ? now : capturedAtCandidate;
+        if (safeCapturedAt.getTime() > latestCapture.getTime()) {
+          latestCapture = safeCapturedAt;
+        }
+        const entries = Array.isArray(commandResult.entries) ? commandResult.entries : [];
+
+        if (entries.length === 0) {
+          const [infoResult] = await connection.execute(
+            `INSERT INTO machine_info_values (machine_id, command, raw_key, raw_value, raw_output, captured_at, position, command_index, batch_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [machineId, commandName, commandName, rawOutput, rawOutput, safeCapturedAt, 0, i, batchId]
+          );
+
+          const infoId = infoResult.insertId;
+          const parameterName = normalizeParameterName(commandName, commandName, 0);
+          const dataType = inferDataType(rawOutput);
+          const normalizedValue = normalizeValueForType(rawOutput, dataType);
+
+          await connection.execute(
+            'INSERT INTO machine_info_parameters (info_value_id, parameter_name, data_type, normalized_value) VALUES (?, ?, ?, ?)',
+            [infoId, parameterName, dataType, normalizedValue]
+          );
+          inserted += 1;
+          continue;
+        }
+
+        for (let j = 0; j < entries.length; j += 1) {
+          const entry = entries[j] || {};
+          const label = typeof entry.label === 'string' && entry.label.trim()
+            ? entry.label.trim().slice(0, 255)
+            : `Paramètre ${j + 1}`;
+          const value = entry.value !== undefined && entry.value !== null ? String(entry.value) : '';
+          const parsedPosition = Number.parseInt(entry.position, 10);
+          const position = Number.isNaN(parsedPosition) ? j : parsedPosition;
+
+          const [infoResult] = await connection.execute(
+            `INSERT INTO machine_info_values (machine_id, command, raw_key, raw_value, raw_output, captured_at, position, command_index, batch_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [machineId, commandName, label, value, j === 0 ? rawOutput : null, safeCapturedAt, position, i, batchId]
+          );
+
+          const infoId = infoResult.insertId;
+          const parameterName = normalizeParameterName(label, commandName, j);
+          const dataType = inferDataType(value);
+          const normalizedValue = normalizeValueForType(value, dataType);
+
+          await connection.execute(
+            'INSERT INTO machine_info_parameters (info_value_id, parameter_name, data_type, normalized_value) VALUES (?, ?, ?, ?)',
+            [infoId, parameterName, dataType, normalizedValue]
+          );
+          inserted += 1;
+        }
+      }
+
+      await connection.execute('UPDATE machines SET info_synced_at = ? WHERE id = ?', [latestCapture, machineId]);
+      await connection.commit();
+
+      await logUserAction('machine_info_synced', `Informations machine ${uuid} mises à jour`, req, {
+        userId,
+        uuid,
+        inserted
+      });
+
+      return res.json({
+        success: true,
+        inserted,
+        syncedAt: latestCapture.toISOString()
+      });
+    } catch (error) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        console.error('Erreur rollback informations machine:', rollbackError);
+      }
+      console.error('Erreur enregistrement informations machine:', error);
+      await logError('machine_info_store_failed', error.message, req, { uuid });
+      return res.status(500).json({ error: 'Erreur lors de l\'enregistrement des informations' });
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Erreur préparation informations machine:', error);
+    await logError('machine_info_prepare_failed', error.message, req, { uuid });
+    res.status(500).json({ error: 'Erreur lors du traitement de la requête' });
   }
 });
 

@@ -1,6 +1,8 @@
 /**
  * Gestionnaire des machines CNC
  */
+const DEFAULT_INFO_COMMANDS = ['M990'];
+
 class MachineManager {
     constructor() {
         this.machines = new Map();
@@ -14,6 +16,9 @@ class MachineManager {
         this.historyIndex = -1; // Index actuel dans l'historique
         this.serialListeners = new Set();
         this.pendingDeletionMachine = null;
+        this.infoCache = new Map();
+        this.currentInfoMachine = null;
+        this.infoRefreshInProgress = false;
         this.csrfHeaders = () => {
             const token = window.LineaCNC?.csrfToken;
             return token ? { 'X-CSRF-Token': token } : {};
@@ -26,6 +31,7 @@ class MachineManager {
             this.tileView.setCallbacks({
                 onEdit: (machineId) => this.showModal(machineId),
                 onOpenConsole: (machineId) => this.showConsoleModal(machineId),
+                onViewInfo: (machineId) => this.openInfoModal(machineId),
                 onDelete: (machineId) => this.removeMachine(machineId),
                 onDisconnect: (machineId) => this.disconnectMachine(machineId),
                 onAuthorize: (machineId) => this.authorizeAndConnect(machineId),
@@ -49,13 +55,31 @@ class MachineManager {
                 onDeleteConfirmed: () => this.executePendingDeletion(),
                 onDeleteCancelled: () => {
                     this.pendingDeletionMachine = null;
-                }
+                },
+                onInfoRefresh: () => this.refreshMachineInfo(),
+                onInfoModalClosed: () => this.resetInfoState()
             });
         } else {
             console.warn('MachineManagerView non disponible - interactions limitées');
             this.managerView = null;
         }
         this.init();
+    }
+
+    normalizeInfoCommands(commands, { allowEmpty = false } = {}) {
+        if (!Array.isArray(commands)) {
+            return allowEmpty ? [] : [...DEFAULT_INFO_COMMANDS];
+        }
+
+        const normalized = commands
+            .map((command) => (typeof command === 'string' ? command.trim().toUpperCase() : ''))
+            .filter(Boolean);
+
+        if (normalized.length === 0) {
+            return allowEmpty ? [] : [...DEFAULT_INFO_COMMANDS];
+        }
+
+        return Array.from(new Set(normalized));
     }
 
     init() {
@@ -97,7 +121,13 @@ class MachineManager {
         this.managerView?.clearConsoleInput();
     }
 
-    async handleFormSubmit({ name, baudRate }) {
+    resetInfoState() {
+        this.currentInfoMachine = null;
+        this.infoRefreshInProgress = false;
+        this.managerView?.setInfoRefreshState?.(false);
+    }
+
+    async handleFormSubmit({ name, baudRate, infoCommands }) {
         if (!this.currentEditingMachine || !this.machines.has(this.currentEditingMachine)) {
             notificationManager.show('Machine non trouvée', 'error');
             return;
@@ -113,7 +143,11 @@ class MachineManager {
         const parsedBaudRate = Number.isInteger(baudRate) ? baudRate : parseInt(baudRate, 10);
         const sanitizedBaudRate = Number.isNaN(parsedBaudRate) ? machine?.baudRate : parsedBaudRate;
 
-        await this.updateMachine(this.currentEditingMachine, name, sanitizedBaudRate);
+        const normalizedCommands = Array.isArray(infoCommands) && infoCommands.length > 0
+            ? this.normalizeInfoCommands(infoCommands)
+            : machine.infoCommands;
+
+        await this.updateMachine(this.currentEditingMachine, name, sanitizedBaudRate, normalizedCommands);
         this.managerView?.closeMachineModal();
     }
 
@@ -127,7 +161,8 @@ class MachineManager {
         const machine = this.machines.get(machineId);
         this.managerView?.showMachineModal({
             name: machine.name,
-            baudRate: machine.baudRate
+            baudRate: machine.baudRate,
+            infoCommands: machine.infoCommands
         });
     }
 
@@ -152,6 +187,33 @@ class MachineManager {
         if (!this.readers.has(machineId)) {
             this.startReadingSerial(machineId);
         }
+    }
+
+    openInfoModal(machineId) {
+        if (!machineId || !this.machines.has(machineId)) {
+            notificationManager.show('Machine non trouvée', 'error');
+            return;
+        }
+
+        const machine = this.machines.get(machineId);
+        this.currentInfoMachine = machineId;
+
+        const lastSyncLabel = machine.lastInfoSync
+            ? new Date(machine.lastInfoSync).toLocaleString('fr-FR')
+            : 'Jamais';
+
+        this.managerView?.showInfoModal({
+            machineName: machine.name,
+            lastSyncLabel,
+            commands: machine.infoCommands
+        });
+
+        this.managerView?.setInfoModalError?.(null);
+        this.managerView?.setInfoRefreshState?.(false);
+
+        this.fetchAndDisplayMachineInfo(machine).catch((error) => {
+            console.error('Erreur affichage informations machine:', error);
+        });
     }
 
     async hideConsoleModal() {
@@ -256,6 +318,394 @@ class MachineManager {
 
     appendToConsole(text, colorClass = 'text-green-400') {
         this.managerView?.appendToConsole(text, colorClass);
+    }
+
+    async fetchAndDisplayMachineInfo(machine, { bypassCache = false } = {}) {
+        if (!machine || !machine.uuid) {
+            return;
+        }
+
+        const cacheKey = machine.id;
+
+        if (!bypassCache && this.infoCache.has(cacheKey)) {
+            const cached = this.infoCache.get(cacheKey);
+            this.renderMachineInfo(machine, cached);
+            this.managerView?.setInfoModalLoading(false);
+            return;
+        }
+
+        this.managerView?.setInfoModalLoading(true);
+        this.managerView?.setInfoModalError?.(null);
+
+        try {
+            const response = await fetch(`/api/machines/${machine.uuid}/info`, {
+                headers: {
+                    Accept: 'application/json',
+                    ...this.csrfHeaders()
+                }
+            });
+
+            if (response.status === 404) {
+                const emptyPayload = {
+                    machine: {
+                        infoCommands: machine.infoCommands
+                    },
+                    syncedAt: null,
+                    commandResults: []
+                };
+                this.infoCache.set(cacheKey, emptyPayload);
+                this.renderMachineInfo(machine, emptyPayload);
+                machine.lastInfoSync = null;
+                this.updateDisplay();
+                return;
+            }
+
+            if (!response.ok) {
+                throw new Error('Réponse inattendue du serveur');
+            }
+
+            const data = await response.json();
+            this.infoCache.set(cacheKey, data);
+            this.renderMachineInfo(machine, data);
+
+            const syncedAt = data?.syncedAt || data?.machine?.infoSyncedAt || null;
+            if (syncedAt) {
+                const date = new Date(syncedAt);
+                if (!Number.isNaN(date.getTime())) {
+                    machine.lastInfoSync = date;
+                    this.updateDisplay();
+                }
+            }
+        } catch (error) {
+            console.error('Erreur récupération informations machine:', error);
+            this.managerView?.setInfoModalError?.("Impossible de récupérer les informations de la machine.");
+        } finally {
+            this.managerView?.setInfoModalLoading(false);
+        }
+    }
+
+    renderMachineInfo(machine, payload) {
+        if (!machine) {
+            return;
+        }
+
+        const commands = payload?.machine?.infoCommands || machine.infoCommands;
+        const syncedAt = payload?.syncedAt || payload?.machine?.infoSyncedAt || machine.lastInfoSync || null;
+        const lastSyncLabel = syncedAt
+            ? new Date(syncedAt).toLocaleString('fr-FR')
+            : 'Jamais';
+
+        this.managerView?.updateInfoMeta({
+            machineName: machine.name,
+            lastSyncLabel,
+            commands
+        });
+
+        this.managerView?.renderInfoModalContent(payload?.commandResults || []);
+    }
+
+    async refreshMachineInfo() {
+        if (!this.currentInfoMachine || !this.machines.has(this.currentInfoMachine)) {
+            return;
+        }
+
+        const machine = this.machines.get(this.currentInfoMachine);
+        if (!machine?.isConnected || !machine.port) {
+            const message = 'Connectez la machine pour actualiser les informations.';
+            this.managerView?.setInfoModalError?.(message);
+            notificationManager.show(message, 'warning');
+            return;
+        }
+
+        if (this.infoRefreshInProgress) {
+            return;
+        }
+
+        this.infoRefreshInProgress = true;
+        this.managerView?.setInfoRefreshState?.(true);
+        this.managerView?.setInfoModalError?.(null);
+
+        try {
+            const results = await this.collectInfoFromMachine(machine);
+            if (!results || results.length === 0) {
+                this.managerView?.setInfoModalError?.('Aucune donnée renvoyée par la machine.');
+                notificationManager.show('Aucune donnée renvoyée par la machine.', 'warning');
+                return;
+            }
+
+            const response = await this.persistMachineInfo(machine, results);
+            if (response?.syncedAt) {
+                const date = new Date(response.syncedAt);
+                if (!Number.isNaN(date.getTime())) {
+                    machine.lastInfoSync = date;
+                    this.updateDisplay();
+                }
+            }
+            this.infoCache.delete(machine.id);
+            await this.fetchAndDisplayMachineInfo(machine, { bypassCache: true });
+            notificationManager.show('Informations machine actualisées', 'success');
+        } catch (error) {
+            console.error('Erreur actualisation informations machine:', error);
+            const message = error.message || 'Impossible d\'actualiser les informations.';
+            this.managerView?.setInfoModalError?.(message);
+            notificationManager.show('Erreur lors de la récupération des informations.', 'error');
+        } finally {
+            this.infoRefreshInProgress = false;
+            this.managerView?.setInfoRefreshState?.(false);
+        }
+    }
+
+    async collectInfoFromMachine(machine, commandsOverride = null) {
+        let sourceCommands;
+        if (Array.isArray(commandsOverride)) {
+            sourceCommands = commandsOverride;
+        } else if (Array.isArray(machine.infoCommands) && machine.infoCommands.length > 0) {
+            sourceCommands = machine.infoCommands;
+        } else {
+            sourceCommands = DEFAULT_INFO_COMMANDS;
+        }
+
+        if (!Array.isArray(sourceCommands) || sourceCommands.length === 0) {
+            return [];
+        }
+
+        const commands = this.normalizeInfoCommands(sourceCommands, { allowEmpty: true });
+
+        if (commands.length === 0) {
+            return [];
+        }
+
+        const results = [];
+        for (let i = 0; i < commands.length; i += 1) {
+            const command = typeof commands[i] === 'string' ? commands[i].trim().toUpperCase() : '';
+            if (!command) {
+                continue;
+            }
+
+            const lines = await this.collectCommandResponse(machine.id, command, 7000);
+            const parsed = this.parseInfoResponse(lines);
+            results.push({
+                command,
+                rawOutput: parsed.rawOutput,
+                entries: parsed.entries,
+                capturedAt: new Date().toISOString()
+            });
+        }
+
+        return results;
+    }
+
+    async collectCommandResponse(machineId, command, timeout = 7000) {
+        const machine = this.machines.get(machineId);
+        if (!machine || !machine.port) {
+            throw new Error('Machine non connectée');
+        }
+
+        let detachListener = null;
+        let timeoutId = null;
+        const lines = [];
+
+        const cleanup = () => {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+            }
+            if (typeof detachListener === 'function') {
+                detachListener();
+                detachListener = null;
+            }
+        };
+
+        const responsePromise = new Promise((resolve, reject) => {
+            timeoutId = setTimeout(() => {
+                cleanup();
+                reject(new Error(`Timeout lors de l'exécution de ${command}`));
+            }, timeout);
+
+            detachListener = this.addSerialListener(({ machineId: incomingId, data }) => {
+                if (incomingId !== machineId) {
+                    return;
+                }
+
+                const text = typeof data === 'string' ? data.trim() : '';
+                if (!text) {
+                    return;
+                }
+
+                if (text.toUpperCase() === command.toUpperCase()) {
+                    return;
+                }
+
+                if (text.toLowerCase() === 'ok') {
+                    cleanup();
+                    resolve(lines);
+                    return;
+                }
+
+                lines.push(text);
+            });
+        });
+
+        try {
+            const writer = machine.port.writable.getWriter();
+            try {
+                const encoder = new TextEncoder();
+                await writer.write(encoder.encode(`${command}\n`));
+            } finally {
+                writer.releaseLock();
+            }
+
+            const result = await responsePromise;
+            return result;
+        } catch (error) {
+            cleanup();
+            throw error;
+        } finally {
+            cleanup();
+        }
+    }
+
+    parseInfoResponse(lines = []) {
+        if (!Array.isArray(lines)) {
+            return { entries: [], rawOutput: '' };
+        }
+
+        const entries = [];
+
+        lines.forEach((originalLine, index) => {
+            const line = typeof originalLine === 'string' ? originalLine.trim() : '';
+            if (!line) {
+                return;
+            }
+
+            if (line.toLowerCase() === 'ok') {
+                return;
+            }
+
+            const colonIndex = line.indexOf(':');
+            if (colonIndex === -1) {
+                entries.push({
+                    label: line,
+                    value: '',
+                    position: index
+                });
+                return;
+            }
+
+            const label = line.slice(0, colonIndex).trim();
+            const value = line.slice(colonIndex + 1).trim();
+            entries.push({
+                label: label || `Ligne ${index + 1}`,
+                value,
+                position: index
+            });
+        });
+
+        return {
+            entries,
+            rawOutput: lines.join('\n')
+        };
+    }
+
+    async syncMachineInformation(machine, initialInfo = null) {
+        if (!machine || !machine.uuid) {
+            return;
+        }
+
+        const results = [];
+        const processed = new Set();
+
+        if (initialInfo && Array.isArray(initialInfo.entries) && initialInfo.entries.length > 0) {
+            const normalizedCommand = (initialInfo.command || 'M990').toUpperCase();
+            processed.add(normalizedCommand);
+            results.push({
+                command: normalizedCommand,
+                rawOutput: initialInfo.rawOutput || this.parseInfoResponse(initialInfo.entries.map((entry) => `${entry.label}: ${entry.value}`)).rawOutput,
+                entries: initialInfo.entries,
+                capturedAt: new Date().toISOString()
+            });
+        }
+
+        const remainingCommands = Array.isArray(machine.infoCommands) && machine.infoCommands.length > 0
+            ? this.normalizeInfoCommands(machine.infoCommands, { allowEmpty: true }).filter((command) => !processed.has(command))
+            : [...DEFAULT_INFO_COMMANDS].filter((command) => !processed.has(command));
+
+        if (remainingCommands.length > 0) {
+            try {
+                const additionalResults = await this.collectInfoFromMachine(machine, remainingCommands);
+                additionalResults.forEach((result) => {
+                    if (result?.command) {
+                        processed.add(result.command);
+                    }
+                    results.push(result);
+                });
+            } catch (error) {
+                console.warn('Erreur lors de la collecte automatique des informations:', error);
+            }
+        }
+
+        if (results.length === 0) {
+            return;
+        }
+
+        const response = await this.persistMachineInfo(machine, results, { silent: true });
+        if (response?.syncedAt) {
+            const date = new Date(response.syncedAt);
+            if (!Number.isNaN(date.getTime())) {
+                machine.lastInfoSync = date;
+                this.updateDisplay();
+            }
+        }
+
+        this.infoCache.delete(machine.id);
+
+        if (this.currentInfoMachine === machine.id) {
+            await this.fetchAndDisplayMachineInfo(machine, { bypassCache: true });
+        }
+    }
+
+    async persistMachineInfo(machine, commandResults, { silent = false } = {}) {
+        if (!machine || !machine.uuid || !Array.isArray(commandResults) || commandResults.length === 0) {
+            return null;
+        }
+
+        try {
+            const response = await fetch(`/api/machines/${machine.uuid}/info`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...this.csrfHeaders()
+                },
+                body: JSON.stringify({
+                    commandResults: commandResults.map((result, commandIndex) => ({
+                        command: result.command,
+                        rawOutput: result.rawOutput,
+                        capturedAt: result.capturedAt || new Date().toISOString(),
+                        entries: Array.isArray(result.entries)
+                            ? result.entries.map((entry, entryIndex) => ({
+                                label: entry?.label || '',
+                                value: entry?.value ?? '',
+                                position: typeof entry?.position === 'number' ? entry.position : entryIndex
+                            }))
+                            : []
+                    }))
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Erreur serveur lors de l\'enregistrement des informations');
+            }
+
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('Erreur enregistrement informations machine:', error);
+            if (!silent) {
+                notificationManager.show('Erreur lors de l\'enregistrement des informations machine.', 'error');
+                throw error;
+            }
+            return null;
+        }
     }
 
     async startReadingSerial(machineId) {
@@ -531,7 +981,9 @@ class MachineManager {
                 uuid: null,
                 needsAuthorization: false,
                 lastKnownPortDescriptor: null,
-                legacyPortDescriptor: null
+                legacyPortDescriptor: null,
+                infoCommands: this.normalizeInfoCommands(DEFAULT_INFO_COMMANDS),
+                lastInfoSync: null
             };
 
             this.machines.set(machineId, machine);
@@ -551,7 +1003,7 @@ class MachineManager {
             this.rememberPortDescriptor(machine, port);
 
             await this.saveMachineToDB(machine);
-            await this.finalizeReadyState(machine, port, `Machine ${machine.name} prête`);
+            await this.finalizeReadyState(machine, port, `Machine ${machine.name} prête`, detectedInfo);
         } catch (error) {
             console.error("Erreur lors de l'ajout de la machine:", error);
 
@@ -670,7 +1122,8 @@ class MachineManager {
                     uuid: machine.uuid,
                     name: machine.name,
                     baudRate: machine.baudRate,
-                    port: portName
+                    port: portName,
+                    infoCommands: machine.infoCommands
                 })
             });
 
@@ -703,7 +1156,8 @@ class MachineManager {
                     uuid: machine.uuid,
                     name: machine.name,
                     baudRate: machine.baudRate,
-                    port: portName
+                    port: portName,
+                    infoCommands: machine.infoCommands
                 })
             });
 
@@ -756,21 +1210,35 @@ class MachineManager {
                 }
                 
                 // Créer ou mettre à jour l'objet machine
+                const baudRateValue = dbMachine.baudRate ?? dbMachine.baud_rate;
+                const lastPort = dbMachine.lastPort ?? dbMachine.last_port ?? null;
+                const infoCommandSource = Array.isArray(dbMachine.infoCommands)
+                    ? dbMachine.infoCommands
+                    : dbMachine.info_commands;
+                const infoSyncedAt = dbMachine.infoSyncedAt ?? dbMachine.info_synced_at;
+                const parsedBaudRate = Number.parseInt(baudRateValue, 10);
+                const sanitizedBaudRate = Number.isNaN(parsedBaudRate) ? 115200 : parsedBaudRate;
+
+                const updatedAt = dbMachine.updatedAt ?? dbMachine.updated_at;
+                const createdAt = dbMachine.createdAt ?? dbMachine.created_at;
+
                 const machine = {
                     id: machineId,
                     uuid: dbMachine.uuid,
                     name: dbMachine.name,
                     port: null,
                     status: 'disconnected',
-                    lastSeen: new Date(dbMachine.updated_at || dbMachine.created_at),
-                    baudRate: dbMachine.baud_rate || 115200,
+                    lastSeen: updatedAt ? new Date(updatedAt) : createdAt ? new Date(createdAt) : new Date(),
+                    baudRate: sanitizedBaudRate,
                     isConnected: false,
                     lastError: null,
                     needsAuthorization: false,
-                    lastKnownPortDescriptor: dbMachine.port || dbMachine.last_port || null,
-                    legacyPortDescriptor: dbMachine.port || dbMachine.last_port || null
+                    lastKnownPortDescriptor: lastPort,
+                    legacyPortDescriptor: lastPort,
+                    infoCommands: this.normalizeInfoCommands(infoCommandSource),
+                    lastInfoSync: infoSyncedAt ? new Date(infoSyncedAt) : null
                 };
-                
+
                 // Ajouter à la liste (remplace si existant)
                 this.machines.set(machineId, machine);
             }
@@ -843,7 +1311,7 @@ class MachineManager {
                     machine.name = detectedInfo.machineName;
                 }
                 const message = `Machine ${machine.name} prête automatiquement`;
-                const success = await this.finalizeReadyState(machine, port, message);
+                const success = await this.finalizeReadyState(machine, port, message, detectedInfo);
                 if (success) {
                     readyCount += 1;
                 }
@@ -915,44 +1383,45 @@ class MachineManager {
 
             await readPromise;
 
-            // Parser la réponse M990 pour extraire UUID et nom de machine
+            const filteredLines = lines.filter((line) => line.trim().toLowerCase() !== 'ok');
+            const parsed = this.parseInfoResponse(filteredLines);
+
             let uuid = null;
             let machineName = null;
-            
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i].trim();
-                
-                // Chercher l'UUID: "Build UUID: bba13cbf-06d5-4dcc-bbdf-e31e95807911"
-                if (line.startsWith('Build UUID:')) {
-                    const uuidMatch = line.match(/Build UUID:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+
+            parsed.entries.forEach((entry) => {
+                if (!entry || !entry.label) {
+                    return;
+                }
+                const label = entry.label.toLowerCase();
+                if (!uuid && label.startsWith('build uuid')) {
+                    const uuidMatch = entry.value.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
                     if (uuidMatch) {
-                        uuid = uuidMatch[1];
+                        uuid = uuidMatch[0];
                         if (!silent) {
                             console.log('UUID trouvé:', uuid);
                         }
                     }
                 }
-                
-                // Chercher le nom de la machine: "Machine Name: Ender-3 Max 4.2.2"
-                if (line.startsWith('Machine Name:')) {
-                    const nameMatch = line.match(/Machine Name:\s*(.+)/);
-                    if (nameMatch) {
-                        machineName = nameMatch[1].trim();
-                        if (!silent) {
-                            console.log('Nom de machine trouvé:', machineName);
-                        }
+
+                if (!machineName && label.startsWith('machine name')) {
+                    machineName = entry.value.trim();
+                    if (!silent) {
+                        console.log('Nom de machine trouvé:', machineName);
                     }
                 }
-            }
-            
-            // Retourner un objet avec UUID et nom si trouvés
+            });
+
             if (uuid) {
                 return {
-                    uuid: uuid,
-                    machineName: machineName || null
+                    uuid,
+                    machineName: machineName || null,
+                    entries: parsed.entries,
+                    rawOutput: parsed.rawOutput,
+                    command: 'M990'
                 };
             }
-            
+
             return null;
         } catch (error) {
             if (!silent) {
@@ -1135,7 +1604,7 @@ class MachineManager {
         return { connected: false, hadPorts, hadAvailablePorts };
     }
 
-    async finalizeReadyState(machine, port, notificationMessage) {
+    async finalizeReadyState(machine, port, notificationMessage, initialInfo = null) {
         if (!machine) return false;
 
         machine.port = port;
@@ -1164,6 +1633,12 @@ class MachineManager {
 
         if (notificationMessage) {
             notificationManager.show(notificationMessage, 'success');
+        }
+
+        try {
+            await this.syncMachineInformation(machine, initialInfo);
+        } catch (error) {
+            console.warn('Synchronisation des informations échouée:', error);
         }
 
         return true;
@@ -1247,7 +1722,7 @@ class MachineManager {
                 targetMachine.name = detectedInfo.machineName;
             }
 
-            await this.finalizeReadyState(targetMachine, port, `Machine ${targetMachine.name} prête`);
+            await this.finalizeReadyState(targetMachine, port, `Machine ${targetMachine.name} prête`, detectedInfo);
             return true;
         } catch (error) {
             await this.safeClosePort(port);
@@ -1388,14 +1863,20 @@ class MachineManager {
         }
     }
 
-    async updateMachine(machineId, name, baudRate) {
+    async updateMachine(machineId, name, baudRate, infoCommands) {
         const machine = this.machines.get(machineId);
         if (!machine) return;
 
         const oldBaudRate = machine.baudRate;
         machine.name = name;
         machine.baudRate = baudRate;
-        
+        const normalizedCommands = this.normalizeInfoCommands(infoCommands || machine.infoCommands);
+        const commandsChanged = JSON.stringify(normalizedCommands) !== JSON.stringify(machine.infoCommands);
+        machine.infoCommands = normalizedCommands;
+        if (commandsChanged) {
+            this.infoCache.delete(machineId);
+        }
+
         // Si la machine est connectée et que le baud rate a changé, fermer et rouvrir
         if (machine.isConnected && oldBaudRate !== baudRate) {
             try {
@@ -1642,6 +2123,10 @@ class MachineManager {
         this.machines.delete(machineId);
         this.ports.delete(machineId);
         this.readers.delete(machineId);
+        this.infoCache.delete(machineId);
+        if (this.currentInfoMachine === machineId) {
+            this.resetInfoState();
+        }
 
         this.updateDisplay();
     }

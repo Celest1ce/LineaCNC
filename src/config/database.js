@@ -28,6 +28,7 @@ async function initDatabase() {
     // Créer les tables si elles n'existent pas
     await createUsersTable(connection);
     await createMachinesTable(connection);
+    await createMachineInfoTables(connection);
     await createLogsTable(connection);
     await createUserSessionsTable(connection);
     
@@ -104,20 +105,78 @@ async function createMachinesTable(connection) {
         name VARCHAR(100) NOT NULL,
         baud_rate INT DEFAULT 115200,
         last_port VARCHAR(100),
+        info_commands TEXT NULL,
+        info_synced_at DATETIME NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         UNIQUE KEY unique_user_machine (user_id, uuid)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `;
-    
+
     await connection.execute(createTableQuery);
     console.log('✅ Table machines créée/vérifiée');
     console.log('ℹ️  Note: Si vous migrez depuis une ancienne version, exécutez:');
     console.log('   node src/config/migrations/migrate-uuid-constraint.js');
-    
+
+    await ensureColumn(
+      connection,
+      'machines',
+      'info_commands',
+      'ALTER TABLE machines ADD COLUMN info_commands TEXT NULL AFTER last_port'
+    );
+    await ensureColumn(
+      connection,
+      'machines',
+      'info_synced_at',
+      'ALTER TABLE machines ADD COLUMN info_synced_at DATETIME NULL AFTER info_commands'
+    );
+
   } catch (error) {
     console.error('❌ Erreur lors de la création de la table machines:', error.message);
+    throw error;
+  }
+}
+
+async function createMachineInfoTables(connection) {
+  try {
+    const createValuesTable = `
+      CREATE TABLE IF NOT EXISTS machine_info_values (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        machine_id INT NOT NULL,
+        command VARCHAR(64) NOT NULL,
+        raw_key VARCHAR(255) NOT NULL,
+        raw_value TEXT NULL,
+        raw_output LONGTEXT NULL,
+        captured_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        position INT DEFAULT 0,
+        command_index INT DEFAULT 0,
+        batch_id CHAR(36) NOT NULL,
+        FOREIGN KEY (machine_id) REFERENCES machines(id) ON DELETE CASCADE,
+        INDEX idx_machine_info_values_machine_id (machine_id),
+        INDEX idx_machine_info_values_batch (batch_id),
+        INDEX idx_machine_info_values_command (command)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `;
+
+    const createParametersTable = `
+      CREATE TABLE IF NOT EXISTS machine_info_parameters (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        info_value_id BIGINT UNSIGNED NOT NULL,
+        parameter_name VARCHAR(191) NOT NULL,
+        data_type ENUM('string', 'number', 'boolean', 'date', 'json', 'unknown') NOT NULL DEFAULT 'string',
+        normalized_value TEXT NULL,
+        FOREIGN KEY (info_value_id) REFERENCES machine_info_values(id) ON DELETE CASCADE,
+        INDEX idx_machine_info_parameters_name (parameter_name)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `;
+
+    await connection.execute(createValuesTable);
+    await connection.execute(createParametersTable);
+
+    console.log('✅ Tables machine_info_values et machine_info_parameters créées/vérifiées');
+  } catch (error) {
+    console.error('❌ Erreur lors de la création des tables machine_info_*:', error.message);
     throw error;
   }
 }
