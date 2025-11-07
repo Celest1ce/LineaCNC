@@ -192,6 +192,9 @@ class MeshViewer {
                 }
             });
         }
+
+        // Injecter l'onglet Correction automatique des données manquantes (UI)
+        this.injectAutoCorrectionUI();
         
         // Détecter les changements dans le textarea pour afficher les infos
         if (meshImport) {
@@ -239,6 +242,164 @@ class MeshViewer {
                     meshImport.focus();
                 }
             }, 100);
+        }
+    }
+
+    /**
+     * Insère un petit bloc UI pour la correction automatique des données manquantes
+     * (injecté près des contrôles de dégradé à gauche)
+     */
+    injectAutoCorrectionUI() {
+        try {
+            if (document.getElementById('autoCorrectionBlock')) return;
+
+            const anchor = document.getElementById('gradientType') || document.getElementById('heatmapLegend') || document.getElementById('meshContainer');
+            if (!anchor || !anchor.parentElement) return;
+
+            const block = document.createElement('div');
+            block.id = 'autoCorrectionBlock';
+            block.className = 'mt-4 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700';
+
+            const title = document.createElement('div');
+            title.className = 'text-sm font-semibold text-gray-800 dark:text-gray-100 mb-2';
+            title.textContent = 'Correction automatique des données manquantes';
+
+            const desc = document.createElement('div');
+            desc.className = 'text-xs text-gray-600 dark:text-gray-300 mb-3';
+            desc.textContent = "Ajuste un plan à partir des points existants (plateau plan) et ne remplit que les cases manquantes. Les valeurs existantes ne sont pas modifiées.";
+
+            const btn = document.createElement('button');
+            btn.id = 'applyAutoCorrection';
+            btn.className = 'w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed';
+            btn.textContent = 'Corriger les données manquantes';
+
+            const info = document.createElement('div');
+            info.id = 'autoCorrectionInfo';
+            info.className = 'mt-2 text-xs text-gray-500 dark:text-gray-400 hidden';
+            info.textContent = '';
+
+            btn.addEventListener('click', () => this.autoFillMissingWithPlane());
+
+            block.appendChild(title);
+            block.appendChild(desc);
+            block.appendChild(btn);
+            block.appendChild(info);
+
+            // Insérer juste après l'élément d'ancrage
+            if (anchor.nextSibling) {
+                anchor.parentElement.insertBefore(block, anchor.nextSibling);
+            } else {
+                anchor.parentElement.appendChild(block);
+            }
+        } catch (e) {
+            // Silencieux si l'UI n'existe pas sur cette page
+        }
+    }
+
+    /**
+     * Remplit uniquement les valeurs manquantes par ajustement plan (moindres carrés)
+     */
+    autoFillMissingWithPlane() {
+        if (!this.meshData || !this.meshData.matrix) {
+            alert('Aucun mesh chargé. Importez des données d\'abord.');
+            return;
+        }
+
+        const matrix = this.meshData.matrix;
+        const rows = this.meshData.rows;
+        const cols = this.meshData.cols;
+
+        // Construire A (x, y, 1) et z pour les points existants
+        const xs = [];
+        const ys = [];
+        const zs = [];
+        for (let i = 0; i < rows; i++) {
+            for (let j = 0; j < cols; j++) {
+                const v = matrix[i][j];
+                if (v !== null && !isNaN(v)) {
+                    xs.push(j);
+                    ys.push(i);
+                    zs.push(v);
+                }
+            }
+        }
+
+        if (zs.length < 3) {
+            alert("Pas assez de points pour ajuster un plan.");
+            return;
+        }
+
+        // Centrer pour stabilité numérique
+        const mean = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+        const mx = mean(xs);
+        const my = mean(ys);
+        const mz = mean(zs);
+
+        let Sxx = 0, Syy = 0, Sxy = 0, Sxz = 0, Syz = 0;
+        for (let k = 0; k < zs.length; k++) {
+            const cx = xs[k] - mx;
+            const cy = ys[k] - my;
+            const cz = zs[k] - mz;
+            Sxx += cx * cx;
+            Syy += cy * cy;
+            Sxy += cx * cy;
+            Sxz += cx * cz;
+            Syz += cy * cz;
+        }
+
+        // Résoudre pour a, b dans z - mz = a(x-mx) + b(y-my)
+        const det = Sxx * Syy - Sxy * Sxy;
+        let a = 0, b = 0;
+        if (Math.abs(det) > 1e-12) {
+            a = (Sxz * Syy - Sxy * Syz) / det;
+            b = (Sxx * Syz - Sxy * Sxz) / det;
+        } else {
+            // Cas dégénéré: utiliser régression unidimensionnelle selon l'axe le plus variant
+            if (Sxx > Syy && Sxx > 1e-12) {
+                a = Sxz / Sxx;
+                b = 0;
+            } else if (Syy > 1e-12) {
+                a = 0;
+                b = Syz / Syy;
+            } else {
+                a = 0; b = 0;
+            }
+        }
+        const c = mz - a * mx - b * my;
+
+        // Remplir uniquement les valeurs manquantes
+        let filled = 0;
+        for (let i = 0; i < rows; i++) {
+            for (let j = 0; j < cols; j++) {
+                if (matrix[i][j] === null || matrix[i][j] === undefined) {
+                    const z = a * j + b * i + c;
+                    matrix[i][j] = z;
+                    filled++;
+                }
+            }
+        }
+
+        if (filled === 0) {
+            const info = document.getElementById('autoCorrectionInfo');
+            if (info) {
+                info.textContent = 'Aucune valeur manquante à corriger.';
+                info.classList.remove('hidden');
+            }
+            return;
+        }
+
+        // Mettre à jour l'affichage (stats, couleurs, légende, 3D)
+        const stats = this.calculateStats(matrix);
+        this.minValue = stats.min;
+        this.maxValue = stats.max;
+        this.updateMatrixColors(stats.min, stats.max);
+        this.updateStats(stats, rows, cols);
+        this.updateLegend(stats.min, stats.max);
+
+        const info = document.getElementById('autoCorrectionInfo');
+        if (info) {
+            info.textContent = `${filled} case(s) manquante(s) corrigée(s) par ajustement plan.`;
+            info.classList.remove('hidden');
         }
     }
     
