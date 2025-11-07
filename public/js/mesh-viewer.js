@@ -557,17 +557,15 @@ class MeshViewer {
             if (line.includes('|')) {
                 const parts = line.split('|');
                 if (parts.length >= 2) {
-                    const rowIndexStr = parts[0].trim();
-                    const rowIndex = parseInt(rowIndexStr);
-                    
-                    // Vérifier que c'est bien un numéro de ligne valide
-                    // Ignorer les lignes qui ne commencent pas par un nombre suivi d'un pipe
-                    if (isNaN(rowIndex) || !/^\d+\s*\|/.test(line.trim())) {
+                    const rowIndexMatch = parts[0].match(/(\d+)\s*$/);
+                    if (!rowIndexMatch) {
                         continue;
                     }
-                    
+
+                    const rowIndex = parseInt(rowIndexMatch[1], 10);
+
                     // Extraire la partie après le pipe (enlever le | final si présent)
-                    let valuesStr = parts[1].trim();
+                    let valuesStr = parts.slice(1).join('|').trim();
                     // Enlever le pipe final si présent
                     valuesStr = valuesStr.replace(/\|\s*$/, '').trim();
                     
