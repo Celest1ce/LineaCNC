@@ -16,9 +16,13 @@
             <div class="flex items-center space-x-4">
                 <!-- Menu outils -->
                 <div class="relative">
-                    <button 
-                        id="toolsButton" 
+                    <button
+                        id="toolsButton"
                         class="flex items-center space-x-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+                        type="button"
+                        aria-haspopup="true"
+                        aria-expanded="false"
+                        aria-controls="toolsDropdown"
                     >
                         <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7H4a1 1 0 00-1 1v11a1 1 0 001 1h16a1 1 0 001-1V8a1 1 0 00-1-1z"></path>
@@ -32,13 +36,17 @@
                     </button>
                     
                     <!-- Dropdown menu -->
-                    <div 
-                        id="toolsDropdown" 
+                    <div
+                        id="toolsDropdown"
                         class="hidden absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg py-1 z-50 border border-gray-200 dark:border-gray-800 transition-colors duration-200"
+                        role="menu"
+                        aria-labelledby="toolsButton"
+                        tabindex="-1"
                     >
-                        <a 
-                            href="/tools/mesh-viewer" 
+                        <a
+                            href="/tools/mesh-viewer"
                             class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                            role="menuitem"
                         >
                             <div class="flex items-center">
                                 <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -52,9 +60,13 @@
                 
                 <!-- Menu paramètres -->
                 <div class="relative">
-                <button 
-                    id="settingsButton" 
+                <button
+                    id="settingsButton"
                     class="flex items-center space-x-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+                    type="button"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                    aria-controls="settingsDropdown"
                 >
                     <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
@@ -67,13 +79,17 @@
                 </button>
                 
                 <!-- Dropdown menu -->
-                <div 
-                    id="settingsDropdown" 
+                <div
+                    id="settingsDropdown"
                     class="hidden absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg py-1 z-50 border border-gray-200 dark:border-gray-800 transition-colors duration-200"
+                    role="menu"
+                    aria-labelledby="settingsButton"
+                    tabindex="-1"
                 >
-                    <a 
-                        href="/account" 
+                    <a
+                        href="/account"
                         class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        role="menuitem"
                     >
                         <div class="flex items-center">
                             <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -90,30 +106,33 @@
                     <div class="px-2 py-1">
                         <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 px-2">Thème</div>
                         <div class="flex items-center justify-between gap-1">
-                            <button 
+                            <button
                                 data-theme="light"
                                 class="theme-btn flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
                                 title="Mode clair"
+                                role="menuitem"
                             >
                                 <svg class="h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-yellow-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
                                 </svg>
                                 <span class="text-xs text-gray-600 dark:text-gray-400">Clair</span>
                             </button>
-                            <button 
+                            <button
                                 data-theme="dark"
                                 class="theme-btn flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
                                 title="Mode sombre"
+                                role="menuitem"
                             >
                                 <svg class="h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
                                 </svg>
                                 <span class="text-xs text-gray-600 dark:text-gray-400">Sombre</span>
                             </button>
-                            <button 
+                            <button
                                 data-theme="auto"
                                 class="theme-btn flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
                                 title="Automatique"
+                                role="menuitem"
                             >
                                 <svg class="h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-purple-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
@@ -131,6 +150,7 @@
                         <button
                             type="submit"
                             class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                            role="menuitem"
                         >
                             <div class="flex items-center">
                                 <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">

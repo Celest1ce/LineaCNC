@@ -12,6 +12,8 @@ class MachineManager {
         this.heartbeatIntervals = new Map(); // Pour stocker les intervalles de heartbeat
         this.commandHistory = []; // Historique des commandes
         this.historyIndex = -1; // Index actuel dans l'historique
+        this.serialListeners = new Set();
+        this.pendingDeletionMachine = null;
         this.csrfHeaders = () => {
             const token = window.LineaCNC?.csrfToken;
             return token ? { 'X-CSRF-Token': token } : {};
@@ -43,7 +45,11 @@ class MachineManager {
                 onMachineModalClosed: () => this.resetEditingState(),
                 onConsoleClosed: () => this.resetConsoleState(),
                 onConsoleSend: (command) => this.handleConsoleSend(command),
-                onConsoleNavigate: (direction) => this.navigateHistory(direction)
+                onConsoleNavigate: (direction) => this.navigateHistory(direction),
+                onDeleteConfirmed: () => this.executePendingDeletion(),
+                onDeleteCancelled: () => {
+                    this.pendingDeletionMachine = null;
+                }
             });
         } else {
             console.warn('MachineManagerView non disponible - interactions limitées');
@@ -56,6 +62,29 @@ class MachineManager {
         this.updateDisplay();
         // Charger les machines sauvegardées depuis la BDD
         this.loadMachinesFromDB();
+    }
+
+    addSerialListener(listener) {
+        if (typeof listener !== 'function') {
+            return () => {};
+        }
+        this.serialListeners.add(listener);
+        return () => this.serialListeners.delete(listener);
+    }
+
+    emitSerialData(machineId, data) {
+        if (this.serialListeners.size === 0) {
+            return;
+        }
+
+        const machine = this.machines.get(machineId) || null;
+        this.serialListeners.forEach((listener) => {
+            try {
+                listener({ machineId, machine, data });
+            } catch (error) {
+                console.error('Erreur dans un listener série:', error);
+            }
+        });
     }
 
     resetEditingState() {
@@ -169,7 +198,9 @@ class MachineManager {
 
         try {
             this.addToHistory(trimmedCommand);
-            this.appendToConsole(`> ${trimmedCommand}`, 'text-blue-400');
+            const outbound = `> ${trimmedCommand}`;
+            this.appendToConsole(outbound, 'text-blue-400');
+            this.emitSerialData(this.currentConsoleMachine, outbound);
 
             const encoder = new TextEncoder();
             const writer = machine.port.writable.getWriter();
@@ -181,7 +212,9 @@ class MachineManager {
             this.managerView?.focusConsoleInput();
         } catch (error) {
             console.error('Erreur lors de l\'envoi:', error);
-            this.appendToConsole(`[Erreur] ${error.message}`, 'text-red-400');
+            const errorMessage = `[Erreur] ${error.message}`;
+            this.appendToConsole(errorMessage, 'text-red-400');
+            this.emitSerialData(this.currentConsoleMachine, errorMessage);
             notificationManager.show('Erreur lors de l\'envoi de la commande', 'error');
         }
     }
@@ -268,20 +301,22 @@ class MachineManager {
                         buffer = lines.pop(); // Garder la dernière ligne incomplète
                         
                         for (const line of lines) {
-                            if (line.trim()) {
-                                // Afficher dans la console seulement si elle est ouverte
-                                if (this.currentConsoleMachine === machineId) {
-                                this.appendToConsole(line.trim());
-                                }
-                                // Mettre à jour lastSeen quand on reçoit des données
+                            const trimmed = line.trim();
+                            if (trimmed) {
                                 machine.lastSeen = new Date();
+                                this.emitSerialData(machineId, trimmed);
+                                if (this.currentConsoleMachine === machineId) {
+                                    this.appendToConsole(trimmed);
+                                }
                             }
                         }
                     }
                 } catch (error) {
                     console.error('Erreur lors de la lecture:', error);
                     if (this.currentConsoleMachine === machineId) {
-                    this.appendToConsole(`[Erreur lecture] ${error.message}`, 'text-red-400');
+                        const errorMessage = `[Erreur lecture] ${error.message}`;
+                        this.appendToConsole(errorMessage, 'text-red-400');
+                        this.emitSerialData(machineId, errorMessage);
                     }
                     this.handleConnectionLost(machineId, error.message);
                 } finally {
@@ -445,30 +480,9 @@ class MachineManager {
 
         // Fermer proprement le port et nettoyer les références
         if (machine.port) {
-            try {
-                // Essayer de fermer le port proprement
-                if (machine.port.readable) {
-                    // Si le port est encore ouvert, essayer de le fermer
-                    try {
-                        await machine.port.close();
-                    } catch (closeError) {
-                        console.log('Erreur lors de la fermeture du port:', closeError);
-                        // Le port peut être déjà fermé ou dans un état invalide
-                    }
-                }
-                
-                // Attendre un peu pour s'assurer que le port est bien libéré
-                await new Promise(resolve => setTimeout(resolve, 200));
-                
-                // Réinitialiser la référence du port pour forcer une nouvelle connexion
-                machine.port = null;
-                this.ports.delete(machineId);
-            } catch (error) {
-                console.error('Erreur lors du nettoyage du port:', error);
-                // En cas d'erreur, réinitialiser quand même la référence
-                machine.port = null;
-                this.ports.delete(machineId);
-            }
+            await this.safeClosePort(machine.port);
+            machine.port = null;
+            this.ports.delete(machineId);
         }
 
         // Mettre à jour le statut
@@ -494,85 +508,67 @@ class MachineManager {
     }
 
     async addMachine() {
+        let port = null;
+        let machineId = null;
         try {
-            // Vérifier si l'API Web Serial est supportée
             if (!('serial' in navigator)) {
                 notificationManager.show('Web Serial API non supportée par ce navigateur', 'error');
                 return;
             }
 
-            // Demander l'accès aux ports série
-            const port = await navigator.serial.requestPort();
-            
-            // Ouvrir le port avec baud rate par défaut (115200)
+            port = await navigator.serial.requestPort();
             await port.open({ baudRate: 115200 });
-            
-            // Générer un ID unique pour la machine
-            const machineId = 'machine_' + Date.now();
-            
-            // Créer l'objet machine avec paramètres par défaut
+
+            machineId = 'machine_' + Date.now();
             const machine = {
                 id: machineId,
                 name: `Machine ${this.machines.size + 1}`,
-                port: port,
+                port,
                 status: 'connecting',
                 lastSeen: new Date(),
                 baudRate: 115200,
                 isConnected: false,
-                uuid: null
+                uuid: null,
+                needsAuthorization: false
             };
 
-            // Ajouter à la liste
             this.machines.set(machineId, machine);
             this.ports.set(machineId, port);
-
-            // Mettre à jour l'affichage
             this.updateDisplay();
 
-            // Simuler la connexion et demander l'UUID
-            setTimeout(async () => {
-                machine.status = 'retrieving';
-                this.updateDisplay();
-                
-                // Récupérer l'UUID et le nom AVANT de démarrer la lecture en arrière-plan
-                const detectedInfo = await this.getUUIDFromPort(port, false);
-                
-                if (detectedInfo) {
-                    machine.uuid = detectedInfo.uuid;
-                    if (detectedInfo.machineName) {
-                        machine.name = detectedInfo.machineName;
-                        console.log('Nom de machine détecté:', detectedInfo.machineName);
-                    }
-                    console.log('UUID trouvé:', detectedInfo.uuid);
-                    
-                    // Sauvegarder la machine en BDD
-                    await this.saveMachineToDB(machine);
-                }
-                
-                // Maintenant que l'UUID est récupéré, démarrer le monitoring et la lecture
-                machine.status = 'ready';
-                machine.isConnected = true;
-                machine.lastSeen = new Date();
-                
-                // Démarrer le monitoring de connexion
-                this.startConnectionMonitoring(machineId);
-                
-                // Démarrer la lecture en arrière-plan (après avoir libéré le reader)
-                this.startReadingSerial(machineId);
-                
-                this.updateDisplay();
-                notificationManager.show(`Machine ${machine.name} prête`, 'success');
-            }, 2000);
-
-        } catch (error) {
-            console.error('Erreur lors de l\'ajout de la machine:', error);
-            if (error.name === 'NotAllowedError') {
-                notificationManager.show('Accès au port série refusé', 'error');
-            } else if (error.name === 'NotFoundError') {
-                notificationManager.show('Aucun port série trouvé', 'error');
-            } else {
-                notificationManager.show('Erreur: Impossible d\'ajouter la machine', 'error');
+            const detectedInfo = await this.getUUIDFromPort(port, false);
+            if (!detectedInfo) {
+                throw new Error("Impossible de détecter l'UUID de la machine");
             }
+
+            machine.uuid = detectedInfo.uuid;
+            if (detectedInfo.machineName) {
+                machine.name = detectedInfo.machineName;
+            }
+
+            await this.saveMachineToDB(machine);
+            await this.finalizeReadyState(machine, port, `Machine ${machine.name} prête`);
+        } catch (error) {
+            console.error('Erreur lors de l'ajout de la machine:', error);
+
+            if (machineId && this.machines.has(machineId)) {
+                this.machines.delete(machineId);
+                this.ports.delete(machineId);
+                this.updateDisplay();
+            }
+
+            await this.safeClosePort(port);
+
+            let message = 'Erreur: Impossible d'ajouter la machine';
+            if (error?.message) {
+                message = error.message;
+            }
+            if (error?.name === 'NotAllowedError') {
+                message = 'Accès au port série refusé';
+            } else if (error?.name === 'NotFoundError') {
+                message = 'Aucun port série trouvé';
+            }
+            notificationManager.show(message, 'error');
         }
     }
 
@@ -807,89 +803,52 @@ class MachineManager {
      * Connexion automatique des machines avec ports autorisés
      */
     async autoConnectMachines(authorizedPorts) {
-        if (authorizedPorts.length === 0) return;
-        
-        console.log(`Tentative de connexion automatique sur ${authorizedPorts.length} port(s) autorisé(s)`);
-        
-        // Pour chaque port autorisé
+        if (!Array.isArray(authorizedPorts) || authorizedPorts.length === 0) return;
+
+        let readyCount = 0;
+
         for (const port of authorizedPorts) {
+            let detectedInfo = null;
             try {
-                // Ouvrir avec baudrate par défaut
                 await port.open({ baudRate: 115200 });
-                
-                // Envoyer M990 automatiquement
-                const detectedInfo = await this.getUUIDFromPort(port, true);
-                
-                if (detectedInfo) {
-                    // Trouver la machine correspondante
-                    const machine = this.findMachineByUUID(detectedInfo.uuid);
-                    
-                    if (machine) {
-                        // 1. Statut "connecting" - Connexion au port
-                        machine.status = 'connecting';
-                        machine.port = port;
-                        this.ports.set(machine.id, port);
-                        this.updateDisplay();
-                        
-                        // 2. Statut "connected" - Port ouvert et prêt
-                        setTimeout(() => {
-                            machine.status = 'connected';
-                            this.updateDisplay();
-                        }, 1000);
-                        
-                        // 3. Statut "retrieving" - Récupération des informations
-                        setTimeout(() => {
-                            machine.status = 'retrieving';
-                            this.updateDisplay();
-                        }, 2000);
-                        
-                        // 4. Statut "ready" - Machine prête avec UUID sauvegardé
-                        setTimeout(async () => {
-                            machine.status = 'ready';
-                            machine.isConnected = true;
-                            machine.lastSeen = new Date();
-                            
-                            // Démarrer le monitoring de connexion
-                            this.startConnectionMonitoring(machine.id);
-                            
-                            // Démarrer la lecture en arrière-plan
-                            this.startReadingSerial(machine.id);
-                            
-                            // Mettre à jour le port COM dans la BDD
-                            if (machine.uuid) {
-                                await this.updatePortInDB(machine);
-                                console.log(`UUID ${machine.uuid} sauvegardé en BDD pour ${machine.name}`);
-                            }
-                            
-                            this.updateDisplay();
-                            console.log(`Machine ${machine.name} prête automatiquement`);
-                        }, 4000);
-                        
-                    } else {
-                        // UUID inconnu - fermer le port
-                        await port.close();
-                        console.log(`UUID ${detectedInfo.uuid} inconnu - port fermé`);
-                    }
-                } else {
-                    // Impossible de détecter l'UUID - fermer le port
-                    await port.close();
-                    console.log('Impossible de détecter l\'UUID - port fermé');
+                detectedInfo = await this.getUUIDFromPort(port, true);
+            } catch (error) {
+                console.error('Erreur lors de la détection automatique:', error);
+            } finally {
+                await this.safeClosePort(port);
+            }
+
+            if (!detectedInfo) {
+                continue;
+            }
+
+            const machine = this.findMachineByUUID(detectedInfo.uuid);
+            if (!machine) {
+                console.log(`UUID ${detectedInfo.uuid} inconnu - port ignoré`);
+                continue;
+            }
+
+            try {
+                await port.open({ baudRate: machine.baudRate });
+                machine.status = 'connecting';
+                machine.needsAuthorization = false;
+                this.updateDisplay();
+                if (detectedInfo.machineName && !machine.name) {
+                    machine.name = detectedInfo.machineName;
+                }
+                const message = `Machine ${machine.name} prête automatiquement`;
+                const success = await this.finalizeReadyState(machine, port, message);
+                if (success) {
+                    readyCount += 1;
                 }
             } catch (error) {
+                await this.safeClosePort(port);
                 console.error('Erreur connexion auto:', error);
-                // Continuer avec les autres ports
             }
         }
-        
-        // Afficher résumé
-        const readyCount = Array.from(this.machines.values())
-            .filter(m => m.status === 'ready').length;
-        
+
         if (readyCount > 0) {
-            notificationManager.show(
-                `${readyCount} machine(s) prête(s) automatiquement`, 
-                'success'
-            );
+            notificationManager.show(`${readyCount} machine(s) prête(s) automatiquement`, 'success');
         }
     }
 
@@ -1018,138 +977,138 @@ class MachineManager {
         return null;
     }
 
+    resolveMachineForUUID(machine, uuid) {
+        if (!uuid) {
+            return null;
+        }
+
+        const existing = this.findMachineByUUID(uuid);
+        if (existing && existing.id !== machine.id) {
+            return existing;
+        }
+
+        machine.uuid = uuid;
+        return machine;
+    }
+
+    async finalizeReadyState(machine, port, notificationMessage) {
+        if (!machine) return false;
+
+        machine.port = port;
+        machine.status = 'connected';
+        this.updateDisplay();
+
+        machine.status = 'retrieving';
+        this.updateDisplay();
+
+        machine.status = 'ready';
+        machine.isConnected = true;
+        machine.needsAuthorization = false;
+        machine.lastSeen = new Date();
+        this.ports.set(machine.id, port);
+
+        this.startConnectionMonitoring(machine.id);
+        this.startReadingSerial(machine.id);
+
+        if (machine.uuid) {
+            await this.updatePortInDB(machine);
+        }
+
+        this.updateDisplay();
+
+        if (notificationMessage) {
+            notificationManager.show(notificationMessage, 'success');
+        }
+
+        return true;
+    }
+
+    async safeClosePort(port) {
+        if (!port) return;
+        try {
+            if (port.readable) {
+                await port.close();
+            }
+        } catch (error) {
+            console.warn('Fermeture du port ignorée:', error.message);
+        }
+    }
+
+    handleConnectionError(machine, error) {
+        if (!machine) {
+            return;
+        }
+
+        machine.status = 'disconnected';
+        machine.isConnected = false;
+        machine.port = null;
+        this.ports.delete(machine.id);
+        this.updateDisplay();
+
+        let message = error?.message || 'Erreur lors de la connexion';
+        let level = 'error';
+        if (error?.name === 'NotAllowedError') {
+            message = 'Accès au port série refusé';
+        } else if (error?.name === 'NotFoundError') {
+            message = 'Aucun port série trouvé';
+        } else if (message && message.toLowerCase().includes('uuid inconnu')) {
+            level = 'warning';
+        }
+
+        if (message) {
+            notificationManager.show(message, level);
+        }
+    }
+
     /**
      * Connecter une machine avec un port spécifique
      */
     async connectMachineWithPort(machine, port) {
+        if (!machine || !port) {
+            return false;
+        }
+
+        let openedHere = false;
         try {
-            // Ouvrir avec le baudrate de la machine
-            await port.open({ baudRate: machine.baudRate });
-            
-            // Envoyer M990 automatiquement (pas de notification)
+            if (!port.readable) {
+                await port.open({ baudRate: machine.baudRate });
+                openedHere = true;
+            }
+
+            machine.status = 'connecting';
+            machine.needsAuthorization = false;
+            machine.port = port;
+            this.ports.set(machine.id, port);
+            this.updateDisplay();
+
             const detectedInfo = await this.getUUIDFromPort(port, true);
-            
             if (!detectedInfo) {
-                await port.close();
-                notificationManager.show(
-                    'Impossible de détecter l\'UUID de la machine', 
-                    'error'
-                );
-                return false;
+                throw new Error("Impossible de détecter l'UUID de la machine");
             }
-            
-            // Vérifier la correspondance
-            if (detectedInfo.uuid === machine.uuid) {
-                // 1. Statut "connecting" - Connexion au port
-                machine.status = 'connecting';
-                machine.port = port;
-                this.ports.set(machine.id, port);
+
+            const targetMachine = this.resolveMachineForUUID(machine, detectedInfo.uuid);
+            if (!targetMachine) {
+                throw new Error('UUID inconnu - machine non enregistrée');
+            }
+
+            if (targetMachine !== machine) {
+                machine.status = 'disconnected';
+                machine.port = null;
                 this.updateDisplay();
-                
-                // 2. Statut "connected" - Port ouvert et prêt
-                setTimeout(() => {
-                    machine.status = 'connected';
-                    this.updateDisplay();
-                }, 1000);
-                
-                // 3. Statut "retrieving" - Récupération des informations
-                setTimeout(() => {
-                    machine.status = 'retrieving';
-                    this.updateDisplay();
-                }, 2000);
-                
-                // 4. Statut "ready" - Machine prête avec UUID sauvegardé
-                setTimeout(async () => {
-                    machine.status = 'ready';
-                    machine.isConnected = true;
-                    machine.lastSeen = new Date();
-                    
-                    // Démarrer le monitoring de connexion
-                    this.startConnectionMonitoring(machine.id);
-                    
-                    // Démarrer la lecture en arrière-plan
-                    this.startReadingSerial(machine.id);
-                    
-                    // Mettre à jour le port COM dans la BDD
-                    if (machine.uuid) {
-                        await this.updatePortInDB(machine);
-                        console.log(`UUID ${machine.uuid} sauvegardé en BDD pour ${machine.name}`);
-                    }
-                    
-                    this.updateDisplay();
-                    notificationManager.show(`Machine ${machine.name} prête`, 'success');
-                }, 4000);
-                
-                return true;
-            } else {
-                // Mauvaise machine - chercher la bonne
-                const correctMachine = this.findMachineByUUID(detectedInfo.uuid);
-                
-                if (correctMachine) {
-                    // Déconnecter l'ancienne si connectée
-                    if (correctMachine.isConnected) {
-                        await this.disconnectMachine(correctMachine.id);
-                    }
-                    
-                    // 1. Statut "connecting" - Connexion au port
-                    correctMachine.status = 'connecting';
-                    correctMachine.port = port;
-                    this.ports.set(correctMachine.id, port);
-                    this.updateDisplay();
-                    
-                    // 2. Statut "connected" - Port ouvert et prêt
-                    setTimeout(() => {
-                        correctMachine.status = 'connected';
-                        this.updateDisplay();
-                    }, 1000);
-                    
-                    // 3. Statut "retrieving" - Récupération des informations
-                    setTimeout(() => {
-                        correctMachine.status = 'retrieving';
-                        this.updateDisplay();
-                    }, 2000);
-                    
-                    // 4. Statut "ready" - Machine prête avec UUID sauvegardé
-                    setTimeout(async () => {
-                        correctMachine.status = 'ready';
-                        correctMachine.isConnected = true;
-                        correctMachine.lastSeen = new Date();
-                        
-                        // Démarrer le monitoring de connexion
-                        this.startConnectionMonitoring(correctMachine.id);
-                        
-                        // Démarrer la lecture en arrière-plan
-                        this.startReadingSerial(correctMachine.id);
-                        
-                        // Mettre à jour le port COM dans la BDD
-                        if (correctMachine.uuid) {
-                            await this.updatePortInDB(correctMachine);
-                            console.log(`UUID ${correctMachine.uuid} sauvegardé en BDD pour ${correctMachine.name}`);
-                        }
-                        
-                        this.updateDisplay();
-                        notificationManager.show(`Machine "${correctMachine.name}" trouvée et prête`, 'success');
-                    }, 4000);
-                    
-                    // Continuer à chercher les autres machines
-                    // Ne pas arrêter le processus
-                    return true;
-                } else {
-                    // UUID inconnu
-                    await port.close();
-                    notificationManager.show(
-                        'UUID inconnu - machine non enregistrée', 
-                        'warning'
-                    );
-                    return false;
-                }
             }
+
+            if (detectedInfo.machineName && !targetMachine.name) {
+                targetMachine.name = detectedInfo.machineName;
+            }
+
+            await this.finalizeReadyState(targetMachine, port, `Machine ${targetMachine.name} prête`);
+            return true;
         } catch (error) {
-            console.error('Erreur connexion:', error);
-            notificationManager.show(
-                `Erreur: ${error.message}`, 
-                'error'
-            );
+            await this.safeClosePort(port);
+            if (openedHere && machine) {
+                machine.port = null;
+            }
+            this.handleConnectionError(machine, error);
             return false;
         }
     }
@@ -1216,47 +1175,42 @@ class MachineManager {
             }
             return;
         }
-        
-        // Vérifier si la machine est déjà connectée
+
         if (machine.isConnected || machine.status === 'ready' || machine.status === 'connected') {
-            if (typeof notificationManager !== 'undefined') {
-                notificationManager.show('Machine déjà connectée', 'info');
-            } else {
-                console.log('Machine déjà connectée');
-            }
+            notificationManager.show('Machine déjà connectée', 'info');
             return;
         }
-        
-        // Vérifier si la machine est en cours de connexion
+
         if (machine.status === 'connecting' || machine.status === 'retrieving') {
-            if (typeof notificationManager !== 'undefined') {
-                notificationManager.show('Connexion en cours...', 'info');
-            } else {
-                console.log('Connexion en cours...');
-            }
+            notificationManager.show('Connexion en cours...', 'info');
             return;
         }
-        
+
         try {
-            // Récupérer les ports autorisés
             const ports = await navigator.serial.getPorts();
-            
-            // Si pas de ports autorisés
-            if (ports.length === 0) {
+
+            if (!ports.length) {
                 machine.needsAuthorization = true;
                 this.updateDisplay();
+                notificationManager.show('Aucun port autorisé disponible', 'warning');
                 return;
             }
-            
-            // Essayer chaque port
+
+            let connected = false;
             for (const port of ports) {
                 const success = await this.connectMachineWithPort(machine, port);
-                if (success) break;
+                if (success) {
+                    connected = true;
+                    break;
+                }
             }
-            
+
+            if (!connected) {
+                notificationManager.show('Impossible de connecter la machine avec les ports autorisés', 'warning');
+            }
         } catch (error) {
             console.error('Erreur:', error);
-            notificationManager.show('Erreur lors de la connexion', 'error');
+            this.handleConnectionError(machine, error);
         }
     }
 
@@ -1552,85 +1506,98 @@ class MachineManager {
             return;
         }
 
-        if (confirm(`Êtes-vous sûr de vouloir supprimer la machine "${machine.name}" ?`)) {
-            try {
-                // Supprimer de la base de données si UUID présent
-                if (machine.uuid) {
-                    const response = await fetch(`/api/machines/${machine.uuid}`, {
-                        method: 'DELETE',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            ...this.csrfHeaders()
-                        }
-                    });
+        if (this.managerView && typeof this.managerView.showDeleteModal === 'function') {
+            this.pendingDeletionMachine = machineId;
+            this.managerView.setDeleteMachineName(machine.name || 'cette machine');
+            this.managerView.showDeleteModal({ name: machine.name || 'cette machine' });
+            return;
+        }
 
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(errorData.error || 'Erreur lors de la suppression en base de données');
+        const fallbackConfirm =
+            (typeof window !== 'undefined' && typeof window.confirm === 'function' && window.confirm(`Êtes-vous sûr de vouloir supprimer la machine "${machine.name}" ?`)) ||
+            (typeof confirm === 'function' && confirm(`Êtes-vous sûr de vouloir supprimer la machine "${machine.name}" ?`));
+
+        if (fallbackConfirm) {
+            await this.performMachineDeletion(machineId);
+        }
+    }
+
+    async executePendingDeletion() {
+        if (!this.pendingDeletionMachine || !this.machines.has(this.pendingDeletionMachine)) {
+            this.pendingDeletionMachine = null;
+            this.managerView?.closeDeleteModal();
+            notificationManager.show('Machine introuvable', 'error');
+            return;
+        }
+
+        const machineId = this.pendingDeletionMachine;
+        this.pendingDeletionMachine = null;
+        await this.performMachineDeletion(machineId);
+    }
+
+    async performMachineDeletion(machineId) {
+        const machine = this.machines.get(machineId);
+        if (!machine) {
+            notificationManager.show('Machine introuvable', 'error');
+            this.managerView?.closeDeleteModal();
+            return;
+        }
+
+        this.managerView?.closeDeleteModal();
+
+        try {
+            if (machine.uuid) {
+                const response = await fetch(`/api/machines/${machine.uuid}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...this.csrfHeaders()
                     }
-                }
+                });
 
-                // Arrêter le monitoring de connexion
-                this.stopConnectionMonitoring(machineId);
-                
-                // Arrêter la lecture si un reader est actif
-                if (this.readers.has(machineId)) {
-                    await this.stopReadingSerial(machineId);
-                }
-
-                // Fermer le port si connecté
-                if (machine.isConnected && machine.port) {
-                    try {
-                        await machine.port.close();
-                    } catch (error) {
-                        console.warn('Port déjà fermé ou en cours de fermeture:', error.message);
-                    }
-                }
-
-                // Supprimer les références locales
-                this.machines.delete(machineId);
-                this.ports.delete(machineId);
-                this.readers.delete(machineId);
-                
-                this.updateDisplay();
-                notificationManager.show(`Machine ${machine.name} supprimée`, 'success');
-            } catch (error) {
-                console.error('Erreur lors de la suppression:', error);
-                
-                // Si c'est une erreur 404 (machine non trouvée en BDD), 
-                // supprimer quand même localement
-                if (error.message.includes('Machine non trouvée') || error.message.includes('404')) {
-                    
-                    // Arrêter le monitoring de connexion
-                    this.stopConnectionMonitoring(machineId);
-                    
-                    // Arrêter la lecture si un reader est actif
-                    if (this.readers.has(machineId)) {
-                        await this.stopReadingSerial(machineId);
-                    }
-
-                    // Fermer le port si connecté
-                    if (machine.isConnected && machine.port) {
-                        try {
-                            await machine.port.close();
-                        } catch (closeError) {
-                            console.warn('Port déjà fermé:', closeError.message);
-                        }
-                    }
-
-                    // Supprimer les références locales
-                    this.machines.delete(machineId);
-                    this.ports.delete(machineId);
-                    this.readers.delete(machineId);
-                    
-                    this.updateDisplay();
-                    notificationManager.show(`Machine ${machine.name} supprimée (localement)`, 'success');
-                } else {
-                    // Pour les autres erreurs, ne pas supprimer localement
-                    notificationManager.show(`Erreur lors de la suppression: ${error.message}`, 'error');
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Erreur lors de la suppression en base de données');
                 }
             }
+
+            await this.teardownMachine(machineId, machine);
+            notificationManager.show(`Machine ${machine.name} supprimée`, 'success');
+        } catch (error) {
+            console.error('Erreur lors de la suppression:', error);
+
+            if (error.message.includes('Machine non trouvée') || error.message.includes('404')) {
+                await this.teardownMachine(machineId, machine);
+                notificationManager.show(`Machine ${machine.name} supprimée (localement)`, 'success');
+                return;
+            }
+
+            notificationManager.show(`Erreur lors de la suppression: ${error.message}`, 'error');
         }
+    }
+
+    async teardownMachine(machineId, machine = null) {
+        const targetMachine = machine || this.machines.get(machineId);
+
+        this.stopConnectionMonitoring(machineId);
+
+        if (this.readers.has(machineId)) {
+            await this.stopReadingSerial(machineId);
+        }
+
+        if (targetMachine && targetMachine.isConnected && targetMachine.port) {
+            try {
+                await targetMachine.port.close();
+            } catch (error) {
+                console.warn('Port déjà fermé ou en cours de fermeture:', error.message);
+            }
+        }
+
+        this.machines.delete(machineId);
+        this.ports.delete(machineId);
+        this.readers.delete(machineId);
+
+        this.updateDisplay();
     }
 
     updateDisplay() {

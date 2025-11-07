@@ -11,6 +11,8 @@ class MeshViewer {
         this.autoImportDone = false;
         this.importTimeout = null;
         this.machineDataBuffer = null;
+        this.serialUnsubscribe = null;
+        this.currentMeshMachineId = null;
         
         // Variables 3D
         this.scene3D = null;
@@ -195,7 +197,10 @@ class MeshViewer {
 
         // Injecter l'onglet Correction automatique des données manquantes (UI)
         this.injectAutoCorrectionUI();
-        
+
+        // Mettre à jour les actions dépendantes du mesh au chargement
+        this.updateAutoCorrectionAvailability();
+
         // Détecter les changements dans le textarea pour afficher les infos
         if (meshImport) {
             meshImport.addEventListener('input', () => {
@@ -228,6 +233,77 @@ class MeshViewer {
         
     }
     
+    notify(message, type = 'info') {
+        if (!message) {
+            return;
+        }
+
+        if (typeof notificationManager !== 'undefined' && typeof notificationManager.show === 'function') {
+            notificationManager.show(message, type);
+        } else {
+            const logMethod = type === 'error' ? console.error : console.log;
+            logMethod(`[MeshViewer] ${message}`);
+        }
+    }
+
+    setAutoCorrectionMessage(message, type = 'info') {
+        const info = document.getElementById('autoCorrectionInfo');
+        if (!info) {
+            return;
+        }
+
+        info.classList.remove(
+            'text-gray-500',
+            'dark:text-gray-400',
+            'text-red-600',
+            'dark:text-red-400',
+            'text-green-600',
+            'dark:text-green-400'
+        );
+
+        delete info.dataset.messageType;
+
+        if (!message) {
+            info.textContent = '';
+            info.classList.add('hidden', 'text-gray-500', 'dark:text-gray-400');
+            return;
+        }
+
+        if (type === 'error') {
+            info.classList.add('text-red-600', 'dark:text-red-400');
+        } else if (type === 'success') {
+            info.classList.add('text-green-600', 'dark:text-green-400');
+        } else {
+            info.classList.add('text-gray-500', 'dark:text-gray-400');
+        }
+
+        info.textContent = message;
+        info.classList.remove('hidden');
+        info.dataset.messageType = type;
+    }
+
+    updateAutoCorrectionAvailability() {
+        const button = document.getElementById('applyAutoCorrection');
+        const hasMesh = Boolean(this.meshData && this.meshData.matrix && this.meshData.matrix.length);
+
+        if (button) {
+            button.disabled = !hasMesh;
+            if (hasMesh) {
+                button.removeAttribute('aria-disabled');
+            } else {
+                button.setAttribute('aria-disabled', 'true');
+            }
+        }
+
+        const info = document.getElementById('autoCorrectionInfo');
+
+        if (!hasMesh) {
+            this.setAutoCorrectionMessage('Importez un mesh pour activer la correction automatique.', 'info');
+        } else if (info && info.dataset.messageType !== 'error' && info.dataset.messageType !== 'success') {
+            this.setAutoCorrectionMessage('', 'info');
+        }
+    }
+
     /**
      * Ouvre le modal d'import
      */
@@ -291,6 +367,8 @@ class MeshViewer {
             } else {
                 anchor.parentElement.appendChild(block);
             }
+
+            this.updateAutoCorrectionAvailability();
         } catch (e) {
             // Silencieux si l'UI n'existe pas sur cette page
         }
@@ -301,7 +379,9 @@ class MeshViewer {
      */
     autoFillMissingWithPlane() {
         if (!this.meshData || !this.meshData.matrix) {
-            alert('Aucun mesh chargé. Importez des données d\'abord.');
+            const message = 'Aucun mesh chargé. Importez des données d\'abord.';
+            this.notify(message, 'error');
+            this.setAutoCorrectionMessage(message, 'error');
             return;
         }
 
@@ -325,7 +405,9 @@ class MeshViewer {
         }
 
         if (zs.length < 3) {
-            alert("Pas assez de points pour ajuster un plan.");
+            const message = 'Pas assez de points pour ajuster un plan.';
+            this.notify(message, 'error');
+            this.setAutoCorrectionMessage(message, 'error');
             return;
         }
 
@@ -380,11 +462,7 @@ class MeshViewer {
         }
 
         if (filled === 0) {
-            const info = document.getElementById('autoCorrectionInfo');
-            if (info) {
-                info.textContent = 'Aucune valeur manquante à corriger.';
-                info.classList.remove('hidden');
-            }
+            this.setAutoCorrectionMessage('Aucune valeur manquante à corriger.', 'info');
             return;
         }
 
@@ -396,11 +474,10 @@ class MeshViewer {
         this.updateStats(stats, rows, cols);
         this.updateLegend(stats.min, stats.max);
 
-        const info = document.getElementById('autoCorrectionInfo');
-        if (info) {
-            info.textContent = `${filled} case(s) manquante(s) corrigée(s) par ajustement plan.`;
-            info.classList.remove('hidden');
-        }
+        const successMessage = `${filled} case(s) manquante(s) corrigée(s) par ajustement plan.`;
+        this.setAutoCorrectionMessage(successMessage, 'success');
+        this.notify(successMessage, 'success');
+        this.updateAutoCorrectionAvailability();
     }
     
     /**
@@ -1442,19 +1519,19 @@ class MeshViewer {
     importMesh() {
         const textarea = document.getElementById('meshImport');
         if (!textarea) return;
-        
+
         const text = textarea.value.trim();
         if (!text) {
-            alert('Veuillez coller des données mesh');
+            this.notify('Veuillez coller des données mesh.', 'error');
             return;
         }
-        
+
         const meshData = this.parseMeshData(text);
         if (!meshData) {
-            alert('Format de données invalide. Veuillez vérifier le format.');
+            this.notify('Format de données invalide. Veuillez vérifier le format.', 'error');
             return;
         }
-        
+
         this.meshData = meshData;
         this.renderMatrix(meshData);
         
@@ -1466,6 +1543,8 @@ class MeshViewer {
         if (importInfo) {
             importInfo.classList.add('hidden');
         }
+
+        this.notify(`Mesh importé (${meshData.rows}x${meshData.cols}).`, 'success');
     }
     
     /**
@@ -1566,6 +1645,17 @@ class MeshViewer {
         if (machineSelectModal) {
             machineSelectModal.classList.add('hidden');
         }
+        if (typeof this.serialUnsubscribe === 'function') {
+            this.serialUnsubscribe();
+            this.serialUnsubscribe = null;
+        }
+        if (this.importTimeout) {
+            clearTimeout(this.importTimeout);
+            this.importTimeout = null;
+        }
+        this.currentMeshMachineId = null;
+        this.machineDataBuffer = null;
+        this.autoImportDone = false;
     }
     
     /**
@@ -1655,14 +1745,17 @@ class MeshViewer {
         
         // Nettoyer le buffer
         this.machineDataBuffer = null;
-        
+
         // Fermer le modal
         this.closeMachineSelection();
-        
-        // Afficher une notification
-        if (typeof notificationManager !== 'undefined') {
-            notificationManager.show(`Mesh importé: ${meshData.rows}x${meshData.cols} (${meshData.totalValues} valeurs)`, 'success');
+
+        if (typeof this.serialUnsubscribe === 'function') {
+            this.serialUnsubscribe();
+            this.serialUnsubscribe = null;
         }
+
+        // Afficher une notification
+        this.notify(`Mesh importé: ${meshData.rows}x${meshData.cols} (${meshData.totalValues} valeurs)`, 'success');
     }
     
     /**
@@ -1671,41 +1764,49 @@ class MeshViewer {
     async connectAndImportFromMachine(machineData, event) {
         const meshCommandInput = document.getElementById('meshCommand');
         const meshCommand = meshCommandInput ? meshCommandInput.value.trim() : 'G29 T';
-        
+
         if (!meshCommand) {
-            alert('Veuillez saisir une commande de récupération.');
+            this.notify('Veuillez saisir une commande de récupération.', 'error');
             return;
         }
-        
-        // Désactiver le bouton
+
+        const supportsSerial = typeof navigator !== 'undefined' && 'serial' in navigator;
+        if (!supportsSerial) {
+            this.notify('La connexion série n\'est pas disponible sur ce navigateur.', 'error');
+            return;
+        }
+
         const btn = event?.target || document.querySelector(`button[data-machine-uuid="${machineData.uuid}"]`);
+        let originalText;
         if (btn) {
             btn.disabled = true;
-            const originalText = btn.innerHTML;
+            originalText = btn.innerHTML;
             btn.innerHTML = '<svg class="animate-spin h-4 w-4 inline-block" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
-            
+        }
+
         try {
-            // Initialiser notificationManager si nécessaire
-            if (typeof notificationManager === 'undefined' && typeof window.notificationManager === 'undefined') {
-                console.warn('NotificationManager non disponible - certaines notifications peuvent ne pas s\'afficher');
-            }
-            
-            // Initialiser MachineManager si nécessaire
             if (typeof MachineManager === 'undefined') {
-                alert('Le gestionnaire de machines n\'est pas disponible. Veuillez recharger la page.');
-                return;
+                throw new Error('Le gestionnaire de machines n'est pas disponible. Veuillez recharger la page.');
             }
-            
+
             if (typeof window.machineManager === 'undefined') {
                 window.machineManager = new MachineManager();
-                // Charger les machines depuis la BDD
                 await window.machineManager.loadMachinesFromDB();
             }
-                
-                // Chercher la machine dans le MachineManager par UUID
-                let machine = null;
-                let machineId = null;
-                
+
+            let machine = null;
+            let machineId = null;
+
+            for (const [id, m] of window.machineManager.machines.entries()) {
+                if (m.uuid === machineData.uuid) {
+                    machine = m;
+                    machineId = id;
+                    break;
+                }
+            }
+
+            if (!machine) {
+                await window.machineManager.loadMachinesFromDB();
                 for (const [id, m] of window.machineManager.machines.entries()) {
                     if (m.uuid === machineData.uuid) {
                         machine = m;
@@ -1713,121 +1814,78 @@ class MeshViewer {
                         break;
                     }
                 }
-                
-                // Si la machine n'existe pas dans le MachineManager, la charger
-                if (!machine) {
-                    // Charger les machines depuis la BDD
-                    await window.machineManager.loadMachinesFromDB();
-                    
-                    // Rechercher la machine
-                    for (const [id, m] of window.machineManager.machines.entries()) {
-                        if (m.uuid === machineData.uuid) {
-                            machine = m;
-                            machineId = id;
-                            break;
-                        }
-                    }
-                }
-                
-                if (!machine || !machineId) {
-                    throw new Error('Machine non trouvée dans le gestionnaire.');
-                }
-                
-                // Si la machine n'est pas connectée, la connecter
-                if (!machine.isConnected) {
-                    // Vérifier si des ports sont déjà autorisés
-                    let hasAuthorizedPorts = false;
-                    try {
-                        if ('serial' in navigator) {
-                            const ports = await navigator.serial.getPorts();
-                            hasAuthorizedPorts = ports.length > 0;
-                        }
-                    } catch (e) {
-                        // Ignorer
-                    }
-                    
-                    if (hasAuthorizedPorts) {
-                        // Essayer de se connecter avec un port existant
-                        await window.machineManager.connectExistingMachine(machineId);
-                        // Attendre la connexion
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                    } else {
-                        // Demander l'autorisation
-                        await window.machineManager.authorizeAndConnect(machineId);
-                        // Attendre la connexion
-                        await new Promise(resolve => setTimeout(resolve, 4000));
-                    }
-                    
-                    // Vérifier la connexion
-                    machine = window.machineManager.machines.get(machineId);
-                }
-                
-                if (!machine || !machine.isConnected || !machine.port) {
-                    throw new Error('Impossible de connecter la machine. Veuillez vérifier la connexion série.');
-                }
-                
-                // Réinitialiser le flag d'import automatique et le buffer
-                this.autoImportDone = false;
-                this.machineDataBuffer = '';
-                this.currentMeshMachineId = machineId; // Stocker l'ID de la machine pour le mesh
-                
-                console.log('Initialisation de la collecte de données pour machine:', machineId);
-                
-                // Intercepter appendToConsole AVANT de démarrer la lecture
-                const originalAppendToConsole = window.machineManager.appendToConsole.bind(window.machineManager);
-                window.machineManager.appendToConsole = (text, colorClass) => {
-                    // Toujours collecter les données si c'est notre machine
-                    if (this.currentMeshMachineId === machineId) {
-                        this.collectMachineData(text + '\n');
-                    }
-                    // Appeler l'original aussi
-                    originalAppendToConsole(text, colorClass);
-                };
-                
-                // Définir currentConsoleMachine pour que startReadingSerial envoie les données à appendToConsole
-                window.machineManager.currentConsoleMachine = machineId;
-                
-                // Démarrer la lecture continue si elle n'existe pas déjà
-                if (!window.machineManager.readers.has(machineId)) {
-                    console.log('Démarrage de startReadingSerial');
-                    window.machineManager.startReadingSerial(machineId);
-                    // Attendre un peu que le reader soit initialisé
-                    await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            if (!machine || !machineId) {
+                throw new Error('Machine non trouvée dans le gestionnaire.');
+            }
+
+            if (!machine.isConnected) {
+                const hasAuthorizedPorts = 'serial' in navigator && (await navigator.serial.getPorts()).length > 0;
+                if (hasAuthorizedPorts) {
+                    await window.machineManager.connectExistingMachine(machineId);
                 } else {
-                    console.log('Reader déjà existant pour cette machine');
+                    await window.machineManager.authorizeAndConnect(machineId);
                 }
-                
-                // Envoyer la commande
-                const encoder = new TextEncoder();
-                const writer = machine.port.writable.getWriter();
+                machine = window.machineManager.machines.get(machineId);
+            }
+
+            if (!machine || !machine.isConnected || !machine.port) {
+                throw new Error('Impossible de connecter la machine. Veuillez vérifier la connexion série.');
+            }
+
+            if (!window.machineManager.readers.has(machineId)) {
+                window.machineManager.startReadingSerial(machineId);
+            }
+
+            this.autoImportDone = false;
+            this.machineDataBuffer = '';
+            this.currentMeshMachineId = machineId;
+
+            if (typeof this.serialUnsubscribe === 'function') {
+                this.serialUnsubscribe();
+                this.serialUnsubscribe = null;
+            }
+
+            this.serialUnsubscribe = window.machineManager.addSerialListener(({ machineId: emittedId, data }) => {
+                if (emittedId === machineId && this.currentMeshMachineId === machineId) {
+                    this.collectMachineData(`${data}\n`);
+                }
+            });
+
+            const encoder = new TextEncoder();
+            let writer = null;
+            try {
+                writer = machine.port.writable.getWriter();
                 await writer.write(encoder.encode(`${meshCommand}\n`));
-                writer.releaseLock();
-                
-                // Collecter aussi la commande envoyée
-                this.collectMachineData(`> ${meshCommand}\n`);
-                
-                console.log('Commande envoyée:', meshCommand);
-                console.log('En attente de la réponse...');
-                
-                // Les données arriveront automatiquement via startReadingSerial qui appelle appendToConsole
-                // L'import automatique se fera quand la réponse sera complète
-                
-            } catch (error) {
-                console.error('Erreur lors de l\'import depuis la machine:', error);
-                if (typeof notificationManager !== 'undefined') {
-                    notificationManager.show(`Erreur lors de l'import: ${error.message}`, 'error');
-                } else {
-                    alert(`Erreur lors de l'import: ${error.message}`);
-                }
             } finally {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = originalText;
-                }
+                writer?.releaseLock();
+            }
+
+            this.collectMachineData(`> ${meshCommand}\n`);
+        } catch (error) {
+            console.error('Erreur lors de l'import depuis la machine:', error);
+            const message = error.message || 'Erreur lors de l'import.';
+            this.notify(message, 'error');
+            if (typeof this.serialUnsubscribe === 'function') {
+                this.serialUnsubscribe();
+                this.serialUnsubscribe = null;
+            }
+            if (this.importTimeout) {
+                clearTimeout(this.importTimeout);
+                this.importTimeout = null;
+            }
+            this.currentMeshMachineId = null;
+            this.autoImportDone = false;
+            this.machineDataBuffer = null;
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
             }
         }
     }
-    
+
     /**
      * Lit la réponse de la machine après l'envoi de G29 T
      */

@@ -12,7 +12,14 @@ const DEFAULT_IDS = {
     closeConsoleModal: 'closeConsoleModal',
     sendConsoleBtn: 'sendConsoleBtn',
     consoleInput: 'consoleInput',
-    consoleOutput: 'consoleOutput'
+    consoleOutput: 'consoleOutput',
+    serialSupportMessage: 'serialSupportMessage',
+    deleteMachineModal: 'deleteMachineModal',
+    closeDeleteMachineModal: 'closeDeleteMachineModal',
+    cancelDeleteMachine: 'cancelDeleteMachine',
+    confirmDeleteMachine: 'confirmDeleteMachine',
+    deleteMachineName: 'deleteMachineName',
+    machineBaudRateError: 'machineBaudRateError'
 };
 
 class MachineManagerView {
@@ -20,8 +27,14 @@ class MachineManagerView {
         this.ids = { ...DEFAULT_IDS, ...customIds };
         this.callbacks = {};
         this.documentClickHandler = this.handleDocumentClick.bind(this);
+        this.boundModalKeydown = this.handleModalKeydown.bind(this);
+        this.boundFocusIn = this.restrictFocusToModal.bind(this);
+        this.activeModal = null;
+        this.focusableElements = [];
+        this.previouslyFocusedElement = null;
         this.cacheElements();
         this.bindEvents();
+        this.updateSerialCapability();
     }
 
     cacheElements() {
@@ -40,7 +53,14 @@ class MachineManagerView {
             closeConsoleModal: document.getElementById(this.ids.closeConsoleModal),
             sendConsoleBtn: document.getElementById(this.ids.sendConsoleBtn),
             consoleInput: document.getElementById(this.ids.consoleInput),
-            consoleOutput: document.getElementById(this.ids.consoleOutput)
+            consoleOutput: document.getElementById(this.ids.consoleOutput),
+            serialSupportMessage: document.getElementById(this.ids.serialSupportMessage),
+            deleteMachineModal: document.getElementById(this.ids.deleteMachineModal),
+            closeDeleteMachineModal: document.getElementById(this.ids.closeDeleteMachineModal),
+            cancelDeleteMachine: document.getElementById(this.ids.cancelDeleteMachine),
+            confirmDeleteMachine: document.getElementById(this.ids.confirmDeleteMachine),
+            deleteMachineName: document.getElementById(this.ids.deleteMachineName),
+            machineBaudRateError: document.getElementById(this.ids.machineBaudRateError)
         };
     }
 
@@ -66,6 +86,9 @@ class MachineManagerView {
 
         if (addMachineBtn) {
             addMachineBtn.addEventListener('click', () => {
+                if (addMachineBtn.disabled) {
+                    return;
+                }
                 this.callbacks.onRequestAddMachine?.();
             });
         }
@@ -131,7 +154,7 @@ class MachineManagerView {
         if (consoleModal) {
             consoleModal.addEventListener('click', (event) => {
                 if (event.target === consoleModal) {
-                    event.stopPropagation();
+                    this.closeConsoleModal();
                 }
             });
         }
@@ -156,6 +179,28 @@ class MachineManagerView {
                     event.preventDefault();
                     this.callbacks.onConsoleNavigate?.('down');
                 }
+            });
+        }
+
+        if (this.elements.deleteMachineModal) {
+            this.elements.deleteMachineModal.addEventListener('click', (event) => {
+                if (event.target === this.elements.deleteMachineModal) {
+                    this.closeDeleteModal();
+                }
+            });
+        }
+
+        if (this.elements.closeDeleteMachineModal) {
+            this.elements.closeDeleteMachineModal.addEventListener('click', () => this.closeDeleteModal());
+        }
+
+        if (this.elements.cancelDeleteMachine) {
+            this.elements.cancelDeleteMachine.addEventListener('click', () => this.handleDeleteCancelled());
+        }
+
+        if (this.elements.confirmDeleteMachine) {
+            this.elements.confirmDeleteMachine.addEventListener('click', () => {
+                this.callbacks.onDeleteConfirmed?.();
             });
         }
     }
@@ -201,20 +246,19 @@ class MachineManagerView {
     }
 
     showMachineModal({ name, baudRate } = {}) {
-        const { machineModal } = this.elements;
+        const { machineModal, machineName } = this.elements;
         if (!machineModal) return;
 
         this.setMachineNameValue(name || '');
         this.setBaudrateValue(baudRate || '');
         this.validateBaudrateInput(this.elements.machineBaudRate?.value);
-        machineModal.classList.remove('hidden');
-        this.focusMachineName();
+        this.openModal(machineModal, machineName);
     }
 
     closeMachineModal() {
         const { machineModal } = this.elements;
         if (!machineModal) return;
-        machineModal.classList.add('hidden');
+        this.closeModal(machineModal);
         this.callbacks.onMachineModalClosed?.();
     }
 
@@ -234,38 +278,62 @@ class MachineManagerView {
     setBaudrateValue(value) {
         if (this.elements.machineBaudRate) {
             this.elements.machineBaudRate.value = value;
+            this.clearBaudrateError();
+        }
+    }
+
+    clearBaudrateError() {
+        const { machineBaudRate, machineBaudRateError } = this.elements;
+        if (machineBaudRateError) {
+            machineBaudRateError.textContent = '';
+            machineBaudRateError.classList.add('hidden');
+        }
+        if (machineBaudRate) {
+            machineBaudRate.removeAttribute('aria-invalid');
+            machineBaudRate.style.borderColor = '';
+            machineBaudRate.style.backgroundColor = '';
         }
     }
 
     validateBaudrateInput(value) {
         const input = this.elements.machineBaudRate;
+        const errorEl = this.elements.machineBaudRateError;
         if (!input) return;
 
         const numericValue = parseInt(value, 10);
         const isValid = !Number.isNaN(numericValue) && numericValue >= 1200 && numericValue <= 20000000;
 
         if (isValid) {
+            input.removeAttribute('aria-invalid');
             input.style.borderColor = '';
             input.style.backgroundColor = '';
+            if (errorEl) {
+                errorEl.textContent = '';
+                errorEl.classList.add('hidden');
+            }
         } else {
+            input.setAttribute('aria-invalid', 'true');
             input.style.borderColor = '#EF4444';
             input.style.backgroundColor = '#FEF2F2';
+            if (errorEl) {
+                errorEl.textContent = 'Entrez une valeur comprise entre 1200 et 20000000 baud.';
+                errorEl.classList.remove('hidden');
+            }
         }
     }
 
     showConsoleModal() {
-        const { consoleModal } = this.elements;
+        const { consoleModal, consoleInput } = this.elements;
         if (!consoleModal) return;
 
         this.resetConsoleOutput();
-        consoleModal.classList.remove('hidden');
-        this.focusConsoleInput();
+        this.openModal(consoleModal, consoleInput);
     }
 
     closeConsoleModal() {
         const { consoleModal } = this.elements;
         if (!consoleModal) return;
-        consoleModal.classList.add('hidden');
+        this.closeModal(consoleModal);
         this.callbacks.onConsoleClosed?.();
     }
 
@@ -306,6 +374,143 @@ class MachineManagerView {
         if (this.elements.consoleInput) {
             this.elements.consoleInput.focus();
         }
+    }
+
+    showDeleteModal({ name } = {}) {
+        const { deleteMachineModal } = this.elements;
+        if (!deleteMachineModal) return;
+
+        this.setDeleteMachineName(name || 'cette machine');
+        this.openModal(deleteMachineModal, this.elements.confirmDeleteMachine);
+    }
+
+    closeDeleteModal() {
+        const { deleteMachineModal } = this.elements;
+        if (!deleteMachineModal) return;
+        this.closeModal(deleteMachineModal);
+    }
+
+    handleDeleteCancelled() {
+        this.closeDeleteModal();
+        this.callbacks.onDeleteCancelled?.();
+    }
+
+    setDeleteMachineName(name) {
+        if (this.elements.deleteMachineName) {
+            this.elements.deleteMachineName.textContent = name;
+        }
+    }
+
+    updateSerialCapability() {
+        const { addMachineBtn, serialSupportMessage } = this.elements;
+        const supported = typeof navigator !== 'undefined' && 'serial' in navigator;
+
+        if (addMachineBtn) {
+            addMachineBtn.disabled = !supported;
+            if (supported) {
+                addMachineBtn.removeAttribute('aria-disabled');
+                addMachineBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            } else {
+                addMachineBtn.setAttribute('aria-disabled', 'true');
+                addMachineBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+        }
+
+        if (serialSupportMessage) {
+            serialSupportMessage.classList.toggle('hidden', supported);
+        }
+    }
+
+    openModal(modal, initialFocusElement) {
+        if (!modal) return;
+
+        this.previouslyFocusedElement = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+
+        modal.classList.remove('hidden');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('overflow-hidden');
+        this.activeModal = modal;
+        this.focusableElements = this.getFocusableElements(modal);
+
+        const initialFocus = initialFocusElement && typeof initialFocusElement.focus === 'function'
+            ? initialFocusElement
+            : this.focusableElements[0];
+
+        (initialFocus || modal).focus();
+
+        modal.addEventListener('keydown', this.boundModalKeydown);
+        document.addEventListener('focusin', this.boundFocusIn);
+    }
+
+    closeModal(modal) {
+        if (!modal) return;
+
+        modal.classList.add('hidden');
+        modal.setAttribute('aria-hidden', 'true');
+
+        if (this.activeModal === modal) {
+            modal.removeEventListener('keydown', this.boundModalKeydown);
+            document.removeEventListener('focusin', this.boundFocusIn);
+            document.body.classList.remove('overflow-hidden');
+            this.activeModal = null;
+            this.focusableElements = [];
+
+            if (this.previouslyFocusedElement && typeof this.previouslyFocusedElement.focus === 'function') {
+                this.previouslyFocusedElement.focus();
+            }
+            this.previouslyFocusedElement = null;
+        }
+    }
+
+    handleModalKeydown(event) {
+        if (!this.activeModal) return;
+
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            if (this.activeModal === this.elements.machineModal) {
+                this.closeMachineModal();
+            } else if (this.activeModal === this.elements.consoleModal) {
+                this.closeConsoleModal();
+            } else if (this.activeModal === this.elements.deleteMachineModal) {
+                this.closeDeleteModal();
+            }
+            return;
+        }
+
+        if (event.key !== 'Tab' || this.focusableElements.length === 0) {
+            return;
+        }
+
+        const first = this.focusableElements[0];
+        const last = this.focusableElements[this.focusableElements.length - 1];
+
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    }
+
+    restrictFocusToModal(event) {
+        if (!this.activeModal || this.activeModal.contains(event.target)) {
+            return;
+        }
+
+        const first = this.focusableElements[0];
+        (first || this.activeModal).focus();
+    }
+
+    getFocusableElements(container) {
+        if (!container) return [];
+        return Array.from(
+            container.querySelectorAll(
+                'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            )
+        ).filter((element) => element.offsetParent !== null);
     }
 }
 
