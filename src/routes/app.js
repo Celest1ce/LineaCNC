@@ -4,7 +4,8 @@ const { executeQuery } = require('../config/database');
 const { requireAuth } = require('../middleware/auth');
 const {
   logUserAction,
-  logError
+  logError,
+  logSecurity
 } = require('../utils/logging');
 const {
   updatePseudoSchema,
@@ -79,12 +80,28 @@ router.post('/account/update-pseudo', requireAuth, async (req, res) => {
   const userId = req.session.user.id;
 
   try {
-    await executeQuery(
-      'UPDATE users SET pseudo = ? WHERE id = ?',
-      [pseudo.trim(), userId]
+    const trimmedPseudo = pseudo.trim();
+
+    const duplicates = await executeQuery(
+      'SELECT id FROM users WHERE pseudo = ? AND id <> ?',
+      [trimmedPseudo, userId]
     );
 
-    req.session.user.pseudo = pseudo.trim();
+    if (duplicates.length > 0) {
+      req.session.error = 'Ce pseudo est déjà utilisé par un autre compte.';
+      await logSecurity('update_pseudo_duplicate', `Pseudo déjà utilisé: ${trimmedPseudo}`, req, {
+        userId,
+        conflictWith: duplicates[0].id
+      });
+      return res.redirect('/account');
+    }
+
+    await executeQuery(
+      'UPDATE users SET pseudo = ? WHERE id = ?',
+      [trimmedPseudo, userId]
+    );
+
+    req.session.user.pseudo = trimmedPseudo;
     req.session.success = 'Pseudo mis à jour avec succès !';
     await logUserAction('update_pseudo_success', `Pseudo mis à jour pour l'utilisateur ${userId}`, req, {
       userId

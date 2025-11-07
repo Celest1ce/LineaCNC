@@ -1,109 +1,9 @@
-const express = require('express');
-const path = require('path');
-const helmet = require('helmet');
-const csrf = require('csurf');
 require('dotenv').config();
 
 const { initDatabase } = require('./config/database');
-const { createSessionMiddleware } = require('./config/session');
-const { requestLogger, errorLogger } = require('./middleware/logging');
-const authRoutes = require('./routes/auth');
-const appRoutes = require('./routes/app');
+const { createApp } = require('./app');
 
-const app = express();
 const PORT = process.env.PORT || 3000;
-
-app.use(helmet({
-  contentSecurityPolicy: false
-}));
-
-if (process.env.NODE_ENV === 'production') {
-  app.set('trust proxy', 1);
-}
-
-// Configuration des sessions
-app.use(createSessionMiddleware());
-
-// Journalisation des requêtes
-app.use(requestLogger);
-
-// Middleware pour parser les données
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
-
-// Configuration des assets
-const { getCacheHeader } = require('./config/assets');
-
-// Servir les fichiers statiques avec headers de cache
-app.use('/assets', (req, res, next) => {
-  // Déterminer le type d'asset basé sur le chemin
-  let assetType = 'images'; // par défaut
-  if (req.path.startsWith('/fonts')) assetType = 'fonts';
-  else if (req.path.startsWith('/documents')) assetType = 'documents';
-  else if (req.path.startsWith('/downloads')) assetType = 'downloads';
-  
-  // Définir le header de cache approprié
-  res.set('Cache-Control', getCacheHeader(assetType));
-  next();
-}, express.static(path.join(__dirname, '../public/assets')));
-
-// Servir les autres fichiers statiques
-app.use(express.static(path.join(__dirname, '../public')));
-
-// Configuration du moteur de template EJS
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
-
-// Middleware pour passer les données de session aux vues
-const csrfProtection = csrf();
-app.use(csrfProtection);
-
-app.use((req, res, next) => {
-  res.locals.csrfToken = req.csrfToken();
-  res.locals.user = req.session.user || null;
-  res.locals.isAuthenticated = !!req.session.user;
-  next();
-});
-
-// Routes
-app.use('/auth', authRoutes);
-app.use('/', appRoutes);
-
-// Route 404
-app.use((req, res) => {
-  res.status(404).render('404', {
-    title: 'Page non trouvée',
-    message: 'La page que vous recherchez n\'existe pas.'
-  });
-});
-
-// Gestion des erreurs CSRF
-app.use((err, req, res, next) => {
-  if (err.code === 'EBADCSRFTOKEN') {
-    console.warn('⚠️ Jeton CSRF invalide détecté');
-    if (req.accepts('json')) {
-      return res.status(403).json({ error: 'Jeton CSRF invalide. Veuillez recharger la page.' });
-    }
-    return res.status(403).render('error', {
-      title: 'Action non autorisée',
-      message: 'La vérification de sécurité a échoué. Veuillez réessayer.'
-    });
-  }
-  return next(err);
-});
-
-// Gestion des erreurs
-app.use(errorLogger);
-
-app.use((err, req, res, next) => {
-  console.error('Erreur serveur:', err.message);
-  res.status(500).render('error', {
-    title: 'Erreur serveur',
-    message: process.env.NODE_ENV === 'production'
-      ? 'Une erreur interne s\'est produite.'
-      : err.message
-  });
-});
 
 // Initialisation et démarrage du serveur
 async function startServer() {
@@ -115,6 +15,11 @@ async function startServer() {
     console.log(`NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
     console.log('');
 
+    if (!process.env.SESSION_SECRET) {
+      console.error('❌ SESSION_SECRET doit être défini pour sécuriser les sessions.');
+      process.exit(1);
+    }
+
     // Initialiser la base de données
     const dbInitialized = await initDatabase();
     if (!dbInitialized) {
@@ -124,6 +29,7 @@ async function startServer() {
     }
 
     // Démarrer le serveur
+    const app = createApp();
     app.listen(PORT, () => {
       console.log(`🚀 Serveur démarré sur le port ${PORT}`);
       console.log(`📱 Application accessible sur: http://localhost:${PORT}`);
@@ -146,6 +52,13 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-// Démarrer le serveur
-startServer();
+// Démarrer le serveur si exécuté directement
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = {
+  startServer,
+  createApp
+};
 

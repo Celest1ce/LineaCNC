@@ -48,14 +48,25 @@ async function createUsersTable(connection) {
         email VARCHAR(255) UNIQUE NOT NULL,
         password VARCHAR(255) NOT NULL,
         pseudo VARCHAR(100) NOT NULL,
+        role ENUM('user', 'admin') NOT NULL DEFAULT 'user',
+        status ENUM('active', 'inactive', 'banned') NOT NULL DEFAULT 'active',
+        failed_attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+        locked_until DATETIME NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_pseudo (pseudo)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `;
-    
+
     await connection.execute(createTableQuery);
     console.log('✅ Table users créée/vérifiée');
-    
+
+    await ensureColumn(connection, 'users', 'role', "ALTER TABLE users ADD COLUMN role ENUM('user','admin') NOT NULL DEFAULT 'user' AFTER pseudo");
+    await ensureColumn(connection, 'users', 'status', "ALTER TABLE users ADD COLUMN status ENUM('active','inactive','banned') NOT NULL DEFAULT 'active' AFTER role");
+    await ensureColumn(connection, 'users', 'failed_attempts', 'ALTER TABLE users ADD COLUMN failed_attempts TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER status');
+    await ensureColumn(connection, 'users', 'locked_until', 'ALTER TABLE users ADD COLUMN locked_until DATETIME NULL AFTER failed_attempts');
+    await ensureUniqueIndex(connection, 'users', 'unique_pseudo', 'ALTER TABLE users ADD CONSTRAINT unique_pseudo UNIQUE (pseudo)');
+
     const [rows] = await connection.execute('SELECT COUNT(*) as count FROM users');
     if (rows[0].count === 0) {
       if (shouldSeedTestUser) {
@@ -63,11 +74,13 @@ async function createUsersTable(connection) {
         const seedPassword = process.env.SEED_TEST_PASSWORD || 'test123';
         const seedEmail = process.env.SEED_TEST_EMAIL || 'test@lineacnc.com';
         const seedPseudo = process.env.SEED_TEST_PSEUDO || 'Utilisateur Test';
+        const seedRole = process.env.SEED_TEST_ROLE || 'user';
+        const seedStatus = process.env.SEED_TEST_STATUS || 'active';
         const hashedPassword = await bcrypt.hash(seedPassword, 10);
 
         await connection.execute(
-          'INSERT INTO users (email, password, pseudo) VALUES (?, ?, ?)',
-          [seedEmail, hashedPassword, seedPseudo]
+          'INSERT INTO users (email, password, pseudo, role, status) VALUES (?, ?, ?, ?, ?)',
+          [seedEmail, hashedPassword, seedPseudo, seedRole, seedStatus]
         );
         console.log(`✅ Utilisateur de test créé (email: ${seedEmail})`);
       } else {
@@ -186,6 +199,22 @@ async function closeDatabase() {
   if (pool) {
     await pool.end();
     console.log('✅ Connexion à la base de données fermée');
+  }
+}
+
+async function ensureColumn(connection, table, column, alterQuery) {
+  const [columns] = await connection.execute(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, [column]);
+  if (columns.length === 0) {
+    await connection.execute(alterQuery);
+    console.log(`ℹ️ Colonne ${column} ajoutée à ${table}`);
+  }
+}
+
+async function ensureUniqueIndex(connection, table, indexName, alterQuery) {
+  const [indexes] = await connection.execute(`SHOW INDEX FROM \`${table}\` WHERE Key_name = ?`, [indexName]);
+  if (indexes.length === 0) {
+    await connection.execute(alterQuery);
+    console.log(`ℹ️ Index unique ${indexName} ajouté à ${table}`);
   }
 }
 

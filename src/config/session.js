@@ -2,7 +2,15 @@ const session = require('express-session');
 const MySQLStore = require('express-mysql-session')(session);
 const { dbConfig } = require('./database');
 
+function assertSessionSecret() {
+  if (!process.env.SESSION_SECRET) {
+    throw new Error('SESSION_SECRET doit être défini dans les variables d\'environnement.');
+  }
+}
+
 function createSessionMiddleware() {
+  assertSessionSecret();
+
   let store = null;
 
   if (process.env.SESSION_STORE !== 'memory') {
@@ -30,7 +38,7 @@ function createSessionMiddleware() {
   const secureCookies = process.env.NODE_ENV === 'production';
 
   return session({
-    secret: process.env.SESSION_SECRET || 'default-secret-change-in-production',
+    secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     store: store || undefined,

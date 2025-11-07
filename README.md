@@ -1,198 +1,123 @@
-# LineaCNC - Système d'Authentification et d'Administration
+# LineaCNC - Authentification sécurisée
 
 ## 🎯 Vue d'ensemble
 
-Application Node.js complète avec authentification, administration et système de logging avancé, optimisée pour l'hébergement Infomaniak.
+LineaCNC est une application Node.js (Express + EJS) orientée démonstration qui propose une authentification par session, un tableau de bord pour gérer des machines virtuelles et une journalisation fine des actions. Le projet est optimisé pour un déploiement simple sur l'hébergement Infomaniak.
 
-## ✨ Fonctionnalités
+## ✨ Fonctionnalités principales
 
-### 🔐 Authentification
-- Connexion avec email/mot de passe
-- Hachage sécurisé des mots de passe (bcrypt)
-- Gestion des sessions avec cookies
-- Protection contre les attaques par force brute
-- Verrouillage temporaire des comptes
+### 🔐 Authentification & sécurité
+- Connexion via email/mot de passe avec sessions `HttpOnly`
+- Hachage `bcrypt` et politique de mot de passe renforcée (longueur minimale + complexité)
+- Journalisation détaillée des évènements d'authentification et de sécurité
+- Blocage automatique d'un compte après plusieurs tentatives échouées
+- Statut utilisateur (`active`, `inactive`, `banned`) géré côté serveur
 
 ### 👥 Gestion des utilisateurs
-- Système de rôles (admin/user)
-- Statuts des comptes (actif/inactif/banni)
-- Interface d'administration complète
-- CRUD utilisateurs
-- Changement de mots de passe
+- Inscription libre avec vérification d'unicité email/pseudo
+- Suivi des rôles (`user`/`admin`) prêt pour de futures vues d'administration
+- Possibilité de désactiver un compte directement en base pour bloquer l'accès
 
-### 📊 Système de logging
-- Logs en base de données (architecture évolutive)
-- Types de logs : AUTH, SECURITY, SYSTEM, USER_ACTION, ERROR
-- Suivi des sessions utilisateurs
-- Logs d'accès et de sécurité
-- Interface d'administration des logs
+### 📊 Logging & suivi
+- Table `logs` pour tracer toutes les actions importantes
+- Table `user_sessions` pour suivre les connexions/déconnexions (heure, IP, agent)
+- Intégration avec les middlewares pour tracer automatiquement les requêtes critiques
 
 ### 🎨 Interface utilisateur
-- Design moderne avec TailwindCSS
-- Typographie Inter
-- Interface responsive
-- Couleurs : bleu, gris, blanc
-- Navigation horizontale
+- Templates EJS responsives stylés avec TailwindCSS
+- Bundle JavaScript optimisé via esbuild (scripts client regroupés et minifiés)
+- Notifications front pour les actions (succès, erreurs, etc.)
 
 ## 🏗️ Architecture
 
 ```
 LineaCNC/
 ├── src/
+│   ├── app.js                # Construction de l'application Express
+│   ├── server.js             # Démarrage du serveur & bootstrap
 │   ├── config/
-│   │   └── database.js          # Configuration MySQL + migrations
-│   ├── middleware/
-│   │   ├── auth.js              # Authentification
-│   │   ├── admin.js             # Autorisation admin
-│   │   └── logging.js           # Logging des requêtes
-│   ├── routes/
-│   │   ├── auth.js              # Routes d'authentification
-│   │   ├── app.js               # Routes de l'application
-│   │   └── admin.js             # Routes d'administration
-│   ├── utils/
-│   │   └── logging.js           # Système de logging
-│   ├── views/
-│   │   ├── login.ejs            # Page de connexion
-│   │   ├── register.ejs         # Page d'inscription
-│   │   ├── dashboard.ejs        # Tableau de bord
-│   │   ├── account.ejs          # Paramètres du compte
-│   │   ├── admin-users.ejs      # Administration utilisateurs
-│   │   └── admin-logs.ejs       # Administration logs
-│   └── server.js                # Serveur principal
+│   │   ├── database.js       # Connexion MySQL + auto-provisioning
+│   │   ├── session.js        # Configuration des sessions
+│   │   └── assets.js         # Politique de cache statique
+│   ├── middleware/           # Authentification, logging, sécurité
+│   ├── routes/               # Routes applicatives et API
+│   ├── utils/                # Utilitaires de journalisation
+│   ├── validation/           # Schémas Joi
+│   └── views/                # Templates EJS
 ├── public/
-│   ├── css/
-│   │   └── styles.css           # Styles TailwindCSS
-│   └── js/
-│       └── main.js              # JavaScript client
-├── package.json                 # Dépendances Node.js
-├── tailwind.config.js          # Configuration TailwindCSS
-├── .gitignore                  # Fichiers à ignorer
-└── deploy.sh                   # Script de déploiement
+│   ├── css/                  # Styles générés (Tailwind)
+│   └── js/                   # Scripts source + bundle dist
+└── tests/                    # Tests automatisés (Jest + Supertest)
 ```
 
-## 🚀 Installation et déploiement
+## 🚀 Installation & exécution
 
 ### Prérequis
 - Node.js 18+
-- MySQL 5.7+
-- Compte Infomaniak avec hébergement Node.js
+- MySQL 5.7+ (ou compatible)
 
 ### Installation locale
 ```bash
 # Cloner le projet
-git clone <repository-url>
-cd LineaCNC
+ git clone <repository-url>
+ cd LineaCNC
 
 # Installer les dépendances
-npm install
+ npm install
 
 # Configurer l'environnement
-cp .env.example .env
-# Éditer .env avec vos paramètres MySQL
+ cp .env.example .env
+ # Éditer .env avec vos paramètres
 
-# Compiler les styles
-npm run build-css-prod
+# Construire les assets (CSS + JS)
+ npm run build
 
-# Démarrer le serveur
-npm start
+# Lancer l'application
+ npm start
 ```
 
-### Déploiement Infomaniak
-```bash
-# Exécuter le script de déploiement
-./deploy.sh
-
-# Uploadez tous les fichiers via FTP
-# Créez un fichier .env avec vos paramètres Infomaniak
-# Redémarrez l'application Node.js
-```
-
-## 🔧 Configuration
-
-### Variables d'environnement (.env)
+### Variables d'environnement essentielles
 ```env
-# Base de données MySQL
-DB_HOST=mysql-xxx.infomaniak.com
-DB_USER=your_username
-DB_PASSWORD=your_password
-DB_NAME=your_database
-
-# Sessions
-SESSION_SECRET=your-super-secret-key
-
-# Serveur
-PORT=process.env.PORT  # Défini automatiquement par Infomaniak
-NODE_ENV=production
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=secret
+DB_NAME=lineacnc_auth
+SESSION_SECRET=change-me
+PORT=3000
 ```
 
-### Base de données
-Le système crée automatiquement les tables :
-- `users` : Utilisateurs avec rôles et statuts
-- `logs` : Système de logging évolutif
-- `user_sessions` : Suivi des sessions
+⚠️ `SESSION_SECRET` est obligatoire : l'application refusera de démarrer s'il est manquant.
 
-## 👤 Comptes par défaut
+## 🧪 Tests
 
-### Administrateur
-- **Email** : admin@lineacnc.com
-- **Mot de passe** : admin123
-- **Rôle** : admin
-- **Statut** : actif
+Le projet contient des tests Jest/Supertest pour valider les scénarios d'inscription et de connexion.
 
-## 📱 Utilisation
+```bash
+npm test
+```
 
-### Connexion
-1. Accédez à `/auth/login`
-2. Connectez-vous avec vos identifiants
-3. Redirection vers le dashboard
+## 🛠️ Scripts npm
+- `npm run dev` : démarre le serveur avec rechargement `nodemon`
+- `npm run build-css` / `npm run build-css-prod` : génère les styles Tailwind
+- `npm run build-js` / `npm run build-js-prod` : construit le bundle JavaScript avec esbuild
+- `npm run build` : génère CSS + JS optimisés
+- `npm test` : lance la suite de tests
 
-### Administration (admin uniquement)
-- `/admin/users` : Gestion des utilisateurs
-- `/admin/logs` : Consultation des logs
+## 📦 Déploiement Infomaniak
+1. Copier les fichiers sur l'hébergement
+2. Installer les dépendances (`npm install`)
+3. Construire les assets (`npm run build`)
+4. Configurer les variables d'environnement via le panneau d'administration
+5. Redémarrer l'application Node.js
 
-### Paramètres du compte
-- `/account` : Modification du pseudo et mot de passe
+## 🔐 Bonnes pratiques
+- Utiliser des mots de passe utilisateurs forts et uniques
+- Surveiller la table `logs` pour détecter les accès suspects
+- Forcer HTTPS en production (via reverse proxy Infomaniak)
+- Planifier des sauvegardes régulières de la base de données
 
-## 🔒 Sécurité
-
-### Mesures implémentées
-- Hachage bcrypt des mots de passe
-- Sessions sécurisées avec cookies HttpOnly
-- Protection CSRF avec SameSite
-- Limitation des tentatives de connexion
-- Logging de toutes les actions sensibles
-- Validation des entrées utilisateur
-
-### Logs de sécurité
-- Tentatives de connexion échouées
-- Accès non autorisés à l'admin
-- Changements de mots de passe
-- Modifications des comptes utilisateurs
-
-## 🛠️ Maintenance
-
-### Logs
-- Consultation via `/admin/logs`
-- Filtrage par type et niveau
-- Export possible via API
-
-### Base de données
-- Migrations automatiques
-- Sauvegarde recommandée
-- Nettoyage périodique des anciens logs
-
-## 📞 Support
-
-Pour toute question ou problème :
-1. Consultez les logs via `/admin/logs`
-2. Vérifiez la configuration `.env`
-3. Testez la connexion MySQL
-4. Redémarrez l'application
-
-## 📄 Licence
-
-MIT License - Voir le fichier LICENSE pour plus de détails.
+## 🤝 Contributions
+Les contributions sont les bienvenues : issues, PRs, améliorations de docs ou de tests.
 
 ---
-
-**LineaCNC** - Système d'authentification professionnel pour Infomaniak
+LineaCNC – Sécurité et simplicité au service d'une admin CNC minimale.

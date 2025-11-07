@@ -14,6 +14,9 @@ const { loginSchema, registerSchema } = require('../validation/schemas');
 
 const router = express.Router();
 
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCK_DURATION_MINUTES = 15;
+
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -59,7 +62,8 @@ router.post('/login', redirectIfAuthenticated, loginLimiter, async (req, res) =>
   try {
     // Rechercher l'utilisateur dans la base de données
     const users = await executeQuery(
-      'SELECT id, email, password, pseudo FROM users WHERE email = ?',
+      `SELECT id, email, password, pseudo, role, status, failed_attempts, locked_until
+       FROM users WHERE email = ?`,
       [email]
     );
 
@@ -71,22 +75,60 @@ router.post('/login', redirectIfAuthenticated, loginLimiter, async (req, res) =>
 
     const user = users[0];
 
+    if (user.status !== 'active') {
+      req.session.error = 'Ce compte est désactivé. Contactez le support.';
+      await logSecurity('login_blocked_status', `Connexion bloquée pour ${email} (statut: ${user.status})`, req, {
+        userId: user.id,
+        status: user.status
+      });
+      return res.redirect('/auth/login');
+    }
+
+    if (user.locked_until && new Date(user.locked_until) > new Date()) {
+      req.session.error = `Compte verrouillé suite à des tentatives échouées. Réessayez après ${new Date(user.locked_until).toLocaleTimeString('fr-FR')}`;
+      await logSecurity('login_locked', `Tentative de connexion durant verrouillage pour ${email}`, req, {
+        userId: user.id,
+        lockedUntil: user.locked_until
+      });
+      return res.redirect('/auth/login');
+    }
+
     // Vérifier le mot de passe
     const isValidPassword = await bcrypt.compare(password, user.password);
 
     if (!isValidPassword) {
-      req.session.error = 'Email ou mot de passe incorrect';
+      const failedAttempts = (user.failed_attempts || 0) + 1;
+      const shouldLock = failedAttempts >= MAX_FAILED_ATTEMPTS;
+      const lockUntil = shouldLock ? new Date(Date.now() + LOCK_DURATION_MINUTES * 60000) : null;
+
+      await executeQuery(
+        'UPDATE users SET failed_attempts = ?, locked_until = ? WHERE id = ?',
+        [shouldLock ? 0 : failedAttempts, shouldLock ? lockUntil : null, user.id]
+      );
+
+      req.session.error = shouldLock
+        ? `Trop de tentatives. Votre compte est verrouillé ${LOCK_DURATION_MINUTES} minutes.`
+        : 'Email ou mot de passe incorrect';
+
       await logSecurity('login_failed_invalid_password', `Mot de passe invalide pour ${email}`, req, {
-        userId: user.id
+        userId: user.id,
+        failedAttempts,
+        lockedUntil: lockUntil ? lockUntil.toISOString() : null
       });
       return res.redirect('/auth/login');
     }
+
+    await executeQuery(
+      'UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = ?',
+      [user.id]
+    );
 
     // Créer la session utilisateur
     req.session.user = {
       id: user.id,
       email: user.email,
-      pseudo: user.pseudo
+      pseudo: user.pseudo,
+      role: user.role
     };
 
     // Sauvegarder la session explicitement
@@ -190,13 +232,24 @@ router.post('/register', redirectIfAuthenticated, async (req, res) => {
       return res.redirect('/auth/register');
     }
 
+    const existingPseudo = await executeQuery(
+      'SELECT id FROM users WHERE pseudo = ?',
+      [pseudo]
+    );
+
+    if (existingPseudo.length > 0) {
+      req.session.error = 'Ce pseudo est déjà utilisé';
+      await logSecurity('register_pseudo_exists', `Tentative d\'inscription avec pseudo existant: ${pseudo}`, req);
+      return res.redirect('/auth/register');
+    }
+
     // Hasher le mot de passe
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Créer l'utilisateur
     await executeQuery(
-      'INSERT INTO users (email, password, pseudo) VALUES (?, ?, ?)',
-      [email, hashedPassword, pseudo]
+      'INSERT INTO users (email, password, pseudo, role, status) VALUES (?, ?, ?, ?, ?)',
+      [email, hashedPassword, pseudo, 'user', 'active']
     );
 
     req.session.success = 'Compte créé avec succès ! Vous pouvez maintenant vous connecter.';

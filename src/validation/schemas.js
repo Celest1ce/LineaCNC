@@ -1,7 +1,17 @@
 const Joi = require('joi');
 
 const emailSchema = Joi.string().trim().lowercase().email({ tlds: { allow: false } });
-const passwordSchema = Joi.string().min(6).max(128);
+const passwordSchema = Joi.string()
+  .min(10)
+  .max(128)
+  .pattern(/[A-Z]/, 'au moins une lettre majuscule')
+  .pattern(/[a-z]/, 'au moins une lettre minuscule')
+  .pattern(/[0-9]/, 'au moins un chiffre')
+  .pattern(/[^A-Za-z0-9]/, 'au moins un caractère spécial')
+  .messages({
+    'string.min': 'Le mot de passe doit contenir au moins 10 caractères.',
+    'string.pattern.base': 'Le mot de passe doit inclure une majuscule, une minuscule, un chiffre et un caractère spécial.'
+  });
 
 const loginSchema = Joi.object({
   email: emailSchema.required(),
