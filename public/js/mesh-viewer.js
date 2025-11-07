@@ -30,6 +30,11 @@ class MeshViewer {
         this.mesh3DZScale = 1.0; // Amplitude Z par défaut
         this.lastMeshMachineId = null; // Dernière machine utilisée pour le mesh affiché
         this.pointRefreshState = null; // État du rafraîchissement d'un point individuel
+        this.meshDataVersion = 0;
+        this.mesh3DRenderCache = null;
+        this.pendingRender3D = false;
+        this.animationId = null;
+        this.is3DInteracting = false;
 
         this.loadMesh3DPreferences();
         this.init();
@@ -480,6 +485,8 @@ class MeshViewer {
             this.setAutoCorrectionMessage('Aucune valeur manquante à corriger.', 'info');
             return;
         }
+
+        this.markMeshDataDirty();
 
         // Mettre à jour l'affichage (stats, couleurs, légende, 3D)
         const stats = this.calculateStats(matrix);
@@ -1320,13 +1327,20 @@ class MeshViewer {
     init3D() {
         const canvas = document.getElementById('mesh3DCanvas');
         if (!canvas) return;
-        
+
         // Vérifier que Three.js est disponible
         if (typeof THREE === 'undefined') {
             console.error('Three.js n\'est pas disponible');
             return;
         }
-        
+
+        if (this.animationId) {
+            cancelAnimationFrame(this.animationId);
+            this.animationId = null;
+        }
+        this.pendingRender3D = false;
+        this.is3DInteracting = false;
+
         // Scène
         this.scene3D = new THREE.Scene();
         this.scene3D.background = new THREE.Color(0xf3f4f6); // gray-100
@@ -1344,12 +1358,13 @@ class MeshViewer {
         this.camera3D.lookAt(0, 0, 0);
         
         // Renderer
-        this.renderer3D = new THREE.WebGLRenderer({ 
+        this.renderer3D = new THREE.WebGLRenderer({
             canvas: canvas,
-            antialias: true 
+            antialias: true
         });
         this.renderer3D.setSize(width, height);
-        this.renderer3D.setPixelRatio(window.devicePixelRatio);
+        const pixelRatio = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
+        this.renderer3D.setPixelRatio(Math.min(pixelRatio, 1.75));
         
         // Contrôles - Essayer différentes façons d'accéder à OrbitControls
         const initControls = () => {
@@ -1375,6 +1390,19 @@ class MeshViewer {
                 this.controls3D.enableZoom = true;
                 this.controls3D.enablePan = true;
                 this.controls3D.enableRotate = true;
+                this.controls3D.addEventListener('start', () => {
+                    this.is3DInteracting = true;
+                    this.start3DInteractionLoop();
+                });
+                this.controls3D.addEventListener('end', () => {
+                    this.is3DInteracting = false;
+                    this.start3DInteractionLoop();
+                });
+                this.controls3D.addEventListener('change', () => {
+                    if (!this.is3DInteracting) {
+                        this.scheduleRender3DFrame();
+                    }
+                });
                 console.log('OrbitControls initialisé avec succès');
             } else {
                 console.warn('OrbitControls n\'est pas encore disponible, attente du chargement...');
@@ -1399,6 +1427,19 @@ class MeshViewer {
                         this.controls3D.enableZoom = true;
                         this.controls3D.enablePan = true;
                         this.controls3D.enableRotate = true;
+                        this.controls3D.addEventListener('start', () => {
+                            this.is3DInteracting = true;
+                            this.start3DInteractionLoop();
+                        });
+                        this.controls3D.addEventListener('end', () => {
+                            this.is3DInteracting = false;
+                            this.start3DInteractionLoop();
+                        });
+                        this.controls3D.addEventListener('change', () => {
+                            if (!this.is3DInteracting) {
+                                this.scheduleRender3DFrame();
+                            }
+                        });
                         console.log('OrbitControls initialisé après chargement');
                         window.removeEventListener('orbitcontrols-ready', onControlsReady);
                     }
@@ -1440,22 +1481,7 @@ class MeshViewer {
         // Grille et axes seront ajoutés dynamiquement quand le mesh est rendu
         this.gridHelper = null;
         this.axesHelper = null;
-        
-        // Animation loop
-        let animationId = null;
-        const animate = () => {
-            animationId = requestAnimationFrame(animate);
-            if (this.controls3D) {
-                this.controls3D.update();
-            }
-            if (this.renderer3D && this.scene3D && this.camera3D) {
-                this.renderer3D.render(this.scene3D, this.camera3D);
-            }
-        };
-        
-        // Stocker l'ID de l'animation pour pouvoir l'arrêter si nécessaire
-        this.animationId = requestAnimationFrame(animate);
-        
+
         // Gérer le redimensionnement
         const handleResize = () => {
             if (canvas && canvas.parentElement) {
@@ -1466,9 +1492,74 @@ class MeshViewer {
                 this.camera3D.aspect = width / height;
                 this.camera3D.updateProjectionMatrix();
                 this.renderer3D.setSize(width, height);
+                this.scheduleRender3DFrame();
             }
         };
         window.addEventListener('resize', handleResize);
+
+        this.scheduleRender3DFrame();
+    }
+
+    invalidateMesh3DCache() {
+        this.mesh3DRenderCache = null;
+    }
+
+    markMeshDataDirty() {
+        this.meshDataVersion += 1;
+        this.invalidateMesh3DCache();
+        this.scheduleRender3DFrame();
+    }
+
+    render3DFrame() {
+        if (!this.renderer3D || !this.scene3D || !this.camera3D) {
+            return;
+        }
+
+        if (this.controls3D && !this.is3DInteracting) {
+            this.controls3D.update();
+        }
+
+        this.renderer3D.render(this.scene3D, this.camera3D);
+    }
+
+    scheduleRender3DFrame() {
+        if (this.animationId || this.pendingRender3D) {
+            return;
+        }
+
+        this.pendingRender3D = true;
+        requestAnimationFrame(() => {
+            this.pendingRender3D = false;
+            this.render3DFrame();
+        });
+    }
+
+    start3DInteractionLoop() {
+        if (this.animationId || !this.renderer3D || !this.scene3D || !this.camera3D) {
+            return;
+        }
+
+        const animate = () => {
+            if (!this.renderer3D || !this.scene3D || !this.camera3D) {
+                this.animationId = null;
+                return;
+            }
+
+            let shouldContinue = false;
+            if (this.controls3D) {
+                shouldContinue = this.controls3D.update();
+            }
+
+            this.renderer3D.render(this.scene3D, this.camera3D);
+
+            if (this.is3DInteracting || shouldContinue) {
+                this.animationId = requestAnimationFrame(animate);
+            } else {
+                this.animationId = null;
+            }
+        };
+
+        this.animationId = requestAnimationFrame(animate);
     }
 
     /**
@@ -1483,11 +1574,37 @@ class MeshViewer {
      * Calcule la matrice utilisée pour le rendu 3D avec le lissage sélectionné
      */
     getMesh3DRenderMatrix(matrix) {
-        const level = this.mesh3DSmoothingLevel;
-        if (!Array.isArray(matrix) || level <= 0) {
+        if (!Array.isArray(matrix)) {
             return matrix;
         }
-        return this.applyMeshSmoothing(matrix, level);
+
+        const level = this.mesh3DSmoothingLevel;
+
+        if (
+            this.mesh3DRenderCache &&
+            this.mesh3DRenderCache.version === this.meshDataVersion &&
+            this.mesh3DRenderCache.level === level &&
+            Array.isArray(this.mesh3DRenderCache.matrix)
+        ) {
+            return this.mesh3DRenderCache.matrix;
+        }
+
+        if (level <= 0) {
+            this.mesh3DRenderCache = {
+                level,
+                version: this.meshDataVersion,
+                matrix
+            };
+            return matrix;
+        }
+
+        const smoothed = this.applyMeshSmoothing(matrix, level);
+        this.mesh3DRenderCache = {
+            level,
+            version: this.meshDataVersion,
+            matrix: smoothed
+        };
+        return smoothed;
     }
 
     /**
@@ -1567,7 +1684,9 @@ class MeshViewer {
         const stats = this.calculateStats(renderMatrix);
         const rows = renderMatrix.length || meshData.rows || 0;
         const cols = (renderMatrix[0] ? renderMatrix[0].length : 0) || meshData.cols || 0;
-        
+
+        this.pendingRender3D = false;
+
         // Supprimer l'ancien mesh s'il existe
         if (this.mesh3D) {
             this.scene3D.remove(this.mesh3D);
@@ -1711,6 +1830,8 @@ class MeshViewer {
             // Fallback si pas de contrôles : regarder vers le center
             this.camera3D.lookAt(center);
         }
+
+        this.scheduleRender3DFrame();
     }
     
     /**
@@ -1743,6 +1864,7 @@ class MeshViewer {
             // Si vide, c'est une valeur manquante
             if (inputValue === '' || inputValue === '-') {
                 this.meshData.matrix[row][col] = null;
+                this.markMeshDataDirty();
 
                 // Recalculer les statistiques
                 const stats = this.calculateStats(this.meshData.matrix);
@@ -1765,6 +1887,7 @@ class MeshViewer {
                 if (!isNaN(newValue)) {
                     // Mettre à jour la matrice
                     this.meshData.matrix[row][col] = newValue;
+                    this.markMeshDataDirty();
 
                     // Recalculer les statistiques
                     const stats = this.calculateStats(this.meshData.matrix);
@@ -1839,6 +1962,7 @@ class MeshViewer {
         }
 
         this.meshData = meshData;
+        this.markMeshDataDirty();
         this.renderMatrix(meshData);
         this.lastMeshMachineId = null;
 
@@ -2054,6 +2178,7 @@ class MeshViewer {
 
         // Importer les données
         this.meshData = meshData;
+        this.markMeshDataDirty();
         this.renderMatrix(meshData);
 
         if (this.currentMeshMachineId !== null && this.currentMeshMachineId !== undefined) {
@@ -2472,6 +2597,7 @@ class MeshViewer {
                     this.mesh3DZScale = Math.max(0.5, Math.min(10, parsed.zScale));
                 }
             }
+            this.invalidateMesh3DCache();
         } catch (error) {
             console.warn('Impossible de charger les préférences 3D du mesh viewer', error);
         }
@@ -2518,6 +2644,7 @@ class MeshViewer {
         }
 
         this.saveMesh3DPreferences();
+        this.invalidateMesh3DCache();
 
         // Re-rendre le mesh avec les nouveaux paramètres
         if (this.meshData) {
