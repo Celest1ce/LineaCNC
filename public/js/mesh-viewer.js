@@ -1296,6 +1296,7 @@ class MeshViewer {
         }
 
         const probeCommand = `G30 X${x.toFixed(3)} Y${y.toFixed(3)}`;
+        console.log('[MeshViewer] Commande envoyée à la machine:', probeCommand);
 
         const originalContent = button.innerHTML;
         button.disabled = true;
@@ -2369,6 +2370,12 @@ class MeshViewer {
                 const y = parseFloat(match[2]);
                 const z = parseFloat(match[3]);
 
+                console.log('[MeshViewer] Mesure reçue de la machine:', {
+                    x,
+                    y,
+                    z
+                });
+
                 if (Number.isFinite(z)) {
                     this.completePointRefresh({ x, y, z });
                     return true;
@@ -2575,6 +2582,7 @@ class MeshViewer {
             let writer = null;
             try {
                 writer = machine.port.writable.getWriter();
+                console.log('[MeshViewer] Commande envoyée à la machine:', meshCommand);
                 await writer.write(encoder.encode(`${meshCommand}\n`));
             } finally {
                 writer?.releaseLock();
