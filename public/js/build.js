@@ -20,6 +20,7 @@ const config = {
     'config.js',
     'utils/notification.js',
     'utils/theme-manager.js',
+    'components/password-tools.js',
     'components/dropdown-manager.js',
     'views/machine-tile-view.js',
     'views/machine-manager-view.js',
