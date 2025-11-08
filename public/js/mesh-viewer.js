@@ -550,168 +550,200 @@ class MeshViewer {
         if (!text || text.trim() === '') {
             return null;
         }
-        
-        const lines = text.trim().split('\n');
+
+        const sanitized = text.replace(/\r/g, '\n');
+        const lines = sanitized.trim().split('\n');
         const dataLines = [];
-        
-        // Trouver les lignes de données (celles qui contiennent des valeurs numériques avec + ou -)
+        const coordinateLines = [];
+        const columnHeaderCandidates = [];
+
         for (let i = 0; i < lines.length; i++) {
-            let line = lines[i].trim();
-            
-            // Ignorer les lignes vides
-            if (line === '') {
+            const rawLine = typeof lines[i] === 'string' ? lines[i] : '';
+            let line = rawLine.trim();
+
+            if (!line) {
                 continue;
             }
-            
-            // Ignorer les lignes d'en-tête comme "Bed Topography Report:"
-            if (line.toLowerCase().includes('bed topography') || line.toLowerCase().includes('report')) {
+
+            const lowerLine = line.toLowerCase();
+
+            if (lowerLine.includes('bed topography') || lowerLine.includes('report')) {
                 continue;
             }
-            
-            // Ignorer les lignes de coordonnées (1,299) etc.
-            if (line.match(/^\([^)]*\)\s*\([^)]*\)$/) || line.match(/^\([^)]*\)$/)) {
+
+            const coordinateMatches = [...line.matchAll(/\(\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*\)/g)];
+            if (coordinateMatches.length > 0 && !line.includes('|')) {
+                const parsedPairs = coordinateMatches
+                    .map((match) => {
+                        const x = parseFloat(match[1]);
+                        const y = parseFloat(match[2]);
+                        return {
+                            x: Number.isNaN(x) ? null : x,
+                            y: Number.isNaN(y) ? null : y
+                        };
+                    })
+                    .filter((pair) => pair.x !== null || pair.y !== null);
+
+                if (parsedPairs.length > 0) {
+                    coordinateLines.push(parsedPairs);
+                }
                 continue;
             }
-            
-            // Ignorer les lignes "ok" ou autres messages de confirmation
-            if (line.toLowerCase() === 'ok' || line.startsWith('>')) {
+
+            if (lowerLine === 'ok' || line.startsWith('>')) {
                 continue;
             }
-            
-            // Ignorer les lignes de séparateurs ou de numéros de colonnes uniquement (sans pipe)
-            if (line.match(/^[0-9\s]+$/) && !line.includes('|')) {
-                continue;
+
+            if (!line.includes('|')) {
+                const numericTokens = line.match(/[+-]?\d+(?:\.\d+)?/g);
+                if (numericTokens && numericTokens.length >= 2) {
+                    const parsedNumbers = numericTokens
+                        .map((token) => {
+                            const parsed = parseFloat(token);
+                            return Number.isNaN(parsed) ? null : parsed;
+                        })
+                        .filter((value) => value !== null);
+
+                    if (parsedNumbers.length >= 2) {
+                        columnHeaderCandidates.push(parsedNumbers);
+                        continue;
+                    }
+                }
             }
-            
-            // Ignorer les lignes avec uniquement "|"
+
             if (line === '|') {
                 continue;
             }
-            
-            // Ligne de données : format "Y | value1 value2 ..." ou "Y | +0.188 +0.157 ..."
-            // Peut aussi être une ligne de header avec des numéros de colonnes mêlés
+
             if (line.includes('|')) {
                 const parts = line.split('|');
                 if (parts.length >= 2) {
-                    const rowIndexMatch = parts[0].match(/(\d+)\s*$/);
-                    if (!rowIndexMatch) {
+                    const rowLabel = parts[0];
+                    const rowNumberMatch = rowLabel.match(/([+-]?\d+(?:\.\d+)?)(?!.*[+-]?\d)/);
+                    if (!rowNumberMatch) {
                         continue;
                     }
 
-                    const rowIndex = parseInt(rowIndexMatch[1], 10);
+                    const parsedRowPosition = parseFloat(rowNumberMatch[1]);
+                    const rowPosition = Number.isNaN(parsedRowPosition) ? null : parsedRowPosition;
+                    const sortKeyCandidate = Number.isFinite(rowPosition)
+                        ? rowPosition
+                        : parseInt(rowNumberMatch[1], 10);
+                    const rowSortKey = Number.isNaN(sortKeyCandidate) ? null : sortKeyCandidate;
+                    const originalIndex = dataLines.length;
 
-                    // Extraire la partie après le pipe (enlever le | final si présent)
                     let valuesStr = parts.slice(1).join('|').trim();
-                    // Enlever le pipe final si présent
                     valuesStr = valuesStr.replace(/\|\s*$/, '').trim();
-                    
-                    // Extraire les valeurs (format: +0.188 ou [+0.143] ou +0.188 ou -0.015 ou 0.000 ou +0084 ou +0200 ou . pour manquant)
-                    // Gérer aussi les cas où il n'y a pas de signe + ou - au début
-                    // Normaliser les espaces multiples en un seul espace d'abord
+
                     const normalizedStr = valuesStr.replace(/\s+/g, ' ');
-                    
-                    // Parser les valeurs : chercher soit des nombres, soit des points
                     const values = [];
-                    // Pattern pour trouver : un nombre (avec ou sans signe) OU un point (avec ou sans crochets)
-                    const valuePattern = /(\[?\s*\.\s*\]?|[+-]?\d+\.?\d*)/g;
+                    const valuePattern = /(\[\s*\.?\s*\]|[+-]?\d+\.?\d*|\.)/g;
                     let match;
-                    
+
                     while ((match = valuePattern.exec(normalizedStr)) !== null) {
-                        let v = match[1].trim();
-                        
-                        // Détecter les points (.) qui indiquent une valeur manquante
-                        if (v === '.' || v === '[.]' || v === '[ .' || v.match(/^\[?\s*\.\s*\]?$/)) {
-                            values.push(null); // null pour valeur manquante
+                        let token = match[1].trim();
+
+                        if (token === '.' || token === '[.]' || token === '[ .]' || /^\[\s*\.\s*\]$/.test(token)) {
+                            values.push(null);
                             continue;
                         }
-                        
-                        // Enlever les crochets si présents
-                        v = v.replace(/[\[\]]/g, '').trim();
-                        
-                        // Vérifier à nouveau après avoir enlevé les crochets
-                        if (v === '.' || v === '') {
-                            values.push(null); // null pour valeur manquante
+
+                        token = token.replace(/[\[\]]/g, '').trim();
+
+                        if (token === '.' || token === '') {
+                            values.push(null);
                             continue;
                         }
-                        
-                        // Extraire le nombre avec gestion des cas spéciaux
-                        let numMatch = v.match(/^([+-]?)(\d+)(\.\d+)?/);
+
+                        let numMatch = token.match(/^([+-]?)(\d+)(\.\d+)?/);
                         if (!numMatch) {
-                            // Essayer de trouver n'importe quel nombre
-                            numMatch = v.match(/([+-]?\d+\.?\d*)/);
+                            numMatch = token.match(/([+-]?\d+\.?\d*)/);
                         }
-                        
+
                         if (numMatch) {
                             let numStr = numMatch[0];
-                            // Corriger les formats comme +0084 en 0.084 ou +0200 en 0.200
-                            if (/^[+-]?\d{4,}$/.test(numStr)) {
-                                // C'est un nombre sans point décimal, probablement mal formaté
-                                // Par exemple +0084 devrait être +0.084
+
+                            if (/^[+-]?\d{4,}$/.test(numStr) && !numStr.includes('.')) {
                                 const sign = numStr.startsWith('-') ? '-' : (numStr.startsWith('+') ? '+' : '');
                                 const digits = numStr.replace(/^[+-]/, '');
                                 if (digits.length >= 3) {
-                                    // Prendre les 3 premiers chiffres comme la partie entière et décimale
                                     numStr = `${sign}${digits.slice(0, 1)}.${digits.slice(1, 3)}`;
                                 }
                             }
-                            
-                            const num = parseFloat(numStr);
-                            values.push(isNaN(num) ? null : num);
+
+                            const parsedValue = parseFloat(numStr);
+                            values.push(Number.isNaN(parsedValue) ? null : parsedValue);
                         } else {
                             values.push(null);
                         }
                     }
-                    
-                    // On garde la ligne même si certaines valeurs sont null (manquantes)
-                    // Cela permet de préserver la structure de la grille
-                    // On vérifie qu'on a au moins une valeur ou des nulls (structure présente)
+
                     if (values.length > 0) {
-                        dataLines.push({ row: rowIndex, values });
+                        dataLines.push({
+                            rowPosition,
+                            rowSortKey,
+                            originalIndex,
+                            values
+                        });
                     }
                 }
             }
         }
-        
+
         if (dataLines.length === 0) {
             return null;
         }
-        
-        // Trier par index de ligne (décroissant - la ligne 9 en haut, ligne 0 en bas)
-        dataLines.sort((a, b) => b.row - a.row);
-        
-        // Déterminer la taille de la matrice (utiliser le nombre maximum de colonnes)
+
+        dataLines.sort((a, b) => {
+            const aKey = Number.isFinite(a.rowSortKey) ? a.rowSortKey : null;
+            const bKey = Number.isFinite(b.rowSortKey) ? b.rowSortKey : null;
+
+            if (aKey !== null && bKey !== null) {
+                if (aKey === bKey) {
+                    return a.originalIndex - b.originalIndex;
+                }
+                return bKey - aKey;
+            }
+
+            if (aKey !== null) {
+                return -1;
+            }
+
+            if (bKey !== null) {
+                return 1;
+            }
+
+            return a.originalIndex - b.originalIndex;
+        });
+
         const numRows = dataLines.length;
-        
-        // Compter les colonnes : utiliser le nombre le plus fréquent pour éviter les erreurs
-        const colCounts = dataLines.map(line => line.values.length);
-        // Si on a plusieurs tailles différentes, prendre la plus fréquente
+
+        const colCounts = dataLines.map((line) => line.values.length);
         const colCountMap = {};
-        colCounts.forEach(count => {
+        colCounts.forEach((count) => {
             colCountMap[count] = (colCountMap[count] || 0) + 1;
         });
-        
-        // Trouver la taille la plus fréquente
+
         let numCols = Math.max(...colCounts);
         let maxFreq = 0;
         for (const [count, freq] of Object.entries(colCountMap)) {
             if (freq > maxFreq) {
                 maxFreq = freq;
-                numCols = parseInt(count);
+                numCols = parseInt(count, 10);
             }
         }
-        
+
         console.log('Détection de la taille:', {
             rows: numRows,
             cols: numCols,
-            colCounts: colCounts,
-            colCountMap: colCountMap
+            colCounts,
+            colCountMap
         });
-        
-        // Créer la matrice et compter les valeurs manquantes
+
         const matrix = [];
         let missingCount = 0;
         let totalValues = 0;
-        
+
         for (let i = 0; i < numRows; i++) {
             matrix.push([]);
             const rowData = dataLines[i];
@@ -720,21 +752,155 @@ class MeshViewer {
                     matrix[i].push(rowData.values[j]);
                     totalValues++;
                 } else {
-                    matrix[i].push(null); // null pour les valeurs manquantes
+                    matrix[i].push(null);
                     missingCount++;
                 }
             }
         }
-        
+
+        const xSamples = [];
+        const ySamples = [];
+        coordinateLines.forEach((pairs) => {
+            pairs.forEach((pair) => {
+                if (pair.x !== null) {
+                    xSamples.push(pair.x);
+                }
+                if (pair.y !== null) {
+                    ySamples.push(pair.y);
+                }
+            });
+        });
+
+        const xRange = xSamples.length > 0
+            ? { min: Math.min(...xSamples), max: Math.max(...xSamples) }
+            : null;
+        const yRange = ySamples.length > 0
+            ? { min: Math.min(...ySamples), max: Math.max(...ySamples) }
+            : null;
+
+        let xCoordinates = null;
+        if (coordinateLines.length > 0) {
+            const bestPairs = coordinateLines.reduce((best, pairs) => {
+                const bestValid = Array.isArray(best)
+                    ? best.filter((pair) => pair.x !== null).length
+                    : 0;
+                const currentValid = pairs.filter((pair) => pair.x !== null).length;
+                return currentValid > bestValid ? pairs : best;
+            }, null);
+
+            if (bestPairs && Array.isArray(bestPairs)) {
+                const sortedPairs = bestPairs
+                    .filter((pair) => pair.x !== null)
+                    .sort((a, b) => a.x - b.x);
+                if (sortedPairs.length >= numCols) {
+                    xCoordinates = sortedPairs.slice(0, numCols).map((pair) => pair.x);
+                } else if (sortedPairs.length === numCols) {
+                    xCoordinates = sortedPairs.map((pair) => pair.x);
+                }
+            }
+        }
+
+        if ((!xCoordinates || xCoordinates.length !== numCols) && columnHeaderCandidates.length > 0) {
+            const bestCandidate = columnHeaderCandidates.reduce((best, candidate) => (
+                candidate.length > (Array.isArray(best) ? best.length : 0) ? candidate : best
+            ), null);
+
+            if (bestCandidate && bestCandidate.length >= numCols) {
+                xCoordinates = bestCandidate.slice(0, numCols);
+            }
+        }
+
+        if ((!xCoordinates || xCoordinates.length !== numCols) && xRange && Number.isFinite(xRange.min) && Number.isFinite(xRange.max)) {
+            xCoordinates = [];
+            if (numCols <= 1 || xRange.max === xRange.min) {
+                for (let col = 0; col < numCols; col++) {
+                    xCoordinates.push(xRange.min);
+                }
+            } else {
+                const step = (xRange.max - xRange.min) / (numCols - 1);
+                for (let col = 0; col < numCols; col++) {
+                    xCoordinates.push(xRange.min + (step * col));
+                }
+            }
+        }
+
+        if (Array.isArray(xCoordinates)) {
+            xCoordinates = xCoordinates.map((value) => {
+                if (Number.isFinite(value)) {
+                    return value;
+                }
+                if (typeof value === 'string') {
+                    const parsed = parseFloat(value);
+                    return Number.isNaN(parsed) ? null : parsed;
+                }
+                return null;
+            });
+
+            if (xCoordinates.some((value) => !Number.isFinite(value))) {
+                xCoordinates = null;
+            }
+        }
+
+        let yCoordinates = dataLines.map((line) => {
+            if (Number.isFinite(line.rowPosition)) {
+                return line.rowPosition;
+            }
+            if (typeof line.rowPosition === 'string') {
+                const parsed = parseFloat(line.rowPosition);
+                if (!Number.isNaN(parsed)) {
+                    return parsed;
+                }
+            }
+            return null;
+        });
+
+        const yNeedsInterpolation = yCoordinates.every((value) => value === null);
+        if ((yNeedsInterpolation || yCoordinates.some((value) => value === null)) && yRange && Number.isFinite(yRange.min) && Number.isFinite(yRange.max)) {
+            const max = yRange.max;
+            const min = yRange.min;
+            if (numRows <= 1 || max === min) {
+                yCoordinates = new Array(numRows).fill(max);
+            } else {
+                const step = (max - min) / (numRows - 1);
+                yCoordinates = yCoordinates.map((value, index) => {
+                    if (Number.isFinite(value)) {
+                        return value;
+                    }
+                    return max - (step * index);
+                });
+            }
+        }
+
+        if (Array.isArray(yCoordinates)) {
+            yCoordinates = yCoordinates.map((value) => {
+                if (Number.isFinite(value)) {
+                    return value;
+                }
+                if (typeof value === 'string') {
+                    const parsed = parseFloat(value);
+                    return Number.isNaN(parsed) ? null : parsed;
+                }
+                return null;
+            });
+
+            if (yCoordinates.every((value) => value === null)) {
+                yCoordinates = null;
+            }
+        }
+
         return {
             matrix,
             rows: numRows,
             cols: numCols,
             missingCount,
-            totalValues
+            totalValues,
+            xCoordinates: Array.isArray(xCoordinates) ? xCoordinates : null,
+            yCoordinates: Array.isArray(yCoordinates) ? yCoordinates : null,
+            xRange,
+            yRange
         };
     }
-    
+
     /**
      * Détecte les informations du mesh dans le textarea
      */
@@ -1062,6 +1228,7 @@ class MeshViewer {
             }
         }
 
+        const coordinateLabel = cell.getAttribute('data-coordinates-label');
         const hasStats = stats && Number.isFinite(stats.min) && Number.isFinite(stats.max);
         const min = hasStats ? stats.min : (numericValue ?? 0);
         const max = hasStats ? stats.max : (numericValue ?? 0);
@@ -1074,12 +1241,17 @@ class MeshViewer {
             if (valueSpan) {
                 valueSpan.textContent = '-';
             }
+            if (coordinateLabel) {
+                cell.title = coordinateLabel;
+            } else {
+                cell.removeAttribute('title');
+            }
             cell.classList.remove('mesh-cell-refreshing');
             return;
         }
 
         const bgColor = this.getHeatmapColor(numericValue, min, max);
-        cell.dataset.value = numericValue;
+        cell.dataset.value = numericValue.toFixed(3);
         cell.style.backgroundColor = bgColor;
         const rgb = this.hexToRgb(bgColor);
         const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
@@ -1088,6 +1260,12 @@ class MeshViewer {
         if (valueSpan) {
             valueSpan.textContent = numericValue >= 0 ? `+${numericValue.toFixed(3)}` : numericValue.toFixed(3);
         }
+        const tooltipParts = [];
+        if (coordinateLabel) {
+            tooltipParts.push(coordinateLabel);
+        }
+        tooltipParts.push(`Z=${numericValue.toFixed(3)} mm`);
+        cell.title = tooltipParts.join(' • ');
         cell.classList.remove('mesh-cell-refreshing');
     }
 
@@ -1096,6 +1274,26 @@ class MeshViewer {
         cell.className = 'mesh-cell editable';
         cell.dataset.row = row;
         cell.dataset.col = col;
+
+        const coordinates = this.getMeshPointCoordinates(row, col);
+        if (coordinates) {
+            const { x, y } = coordinates;
+            const labelParts = [];
+
+            if (Number.isFinite(x)) {
+                cell.dataset.x = x.toFixed(3);
+                labelParts.push(`X=${x.toFixed(2)} mm`);
+            }
+
+            if (Number.isFinite(y)) {
+                cell.dataset.y = y.toFixed(3);
+                labelParts.push(`Y=${y.toFixed(2)} mm`);
+            }
+
+            if (labelParts.length > 0) {
+                cell.setAttribute('data-coordinates-label', labelParts.join(' • '));
+            }
+        }
 
         const refreshButton = this.createCellRefreshButton();
         const valueSpan = document.createElement('span');
@@ -1173,10 +1371,72 @@ class MeshViewer {
         }
     }
 
-    buildPointProbeCommand(row, col) {
-        const iIndex = Number.isInteger(col) ? Math.max(0, col) : 0;
-        const jIndex = Number.isInteger(row) ? Math.max(0, row) : 0;
-        return `G29 P4 I${iIndex} J${jIndex}`;
+    getMeshPointCoordinates(row, col) {
+        if (!this.meshData) {
+            return { x: null, y: null };
+        }
+
+        const { xCoordinates, yCoordinates } = this.meshData;
+        let x = Array.isArray(xCoordinates) ? xCoordinates[col] : null;
+        let y = Array.isArray(yCoordinates) ? yCoordinates[row] : null;
+
+        if (typeof x === 'string') {
+            const parsedX = parseFloat(x);
+            x = Number.isNaN(parsedX) ? null : parsedX;
+        }
+
+        if (typeof y === 'string') {
+            const parsedY = parseFloat(y);
+            y = Number.isNaN(parsedY) ? null : parsedY;
+        }
+
+        if (!Number.isFinite(x)) {
+            x = this.estimateCoordinateFromRange('x', col);
+        }
+
+        if (!Number.isFinite(y)) {
+            y = this.estimateCoordinateFromRange('y', row);
+        }
+
+        return {
+            x: Number.isFinite(x) ? x : null,
+            y: Number.isFinite(y) ? y : null
+        };
+    }
+
+    estimateCoordinateFromRange(axis, index) {
+        if (!this.meshData) {
+            return null;
+        }
+
+        const count = axis === 'x' ? this.meshData.cols : this.meshData.rows;
+        if (!Number.isInteger(index) || index < 0 || index >= count) {
+            return null;
+        }
+
+        const range = axis === 'x' ? this.meshData.xRange : this.meshData.yRange;
+        if (!range || !Number.isFinite(range.min) || !Number.isFinite(range.max)) {
+            return null;
+        }
+
+        if (count <= 1 || range.max === range.min) {
+            return range.min;
+        }
+
+        const step = (range.max - range.min) / (count - 1);
+        if (axis === 'x') {
+            return range.min + (step * index);
+        }
+
+        return range.max - (step * index);
+    }
+
+    buildPointProbeCommand(row, col, coordinates = null) {
+        const { x, y } = (coordinates || this.getMeshPointCoordinates(row, col)) || {};
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            return null;
+        }
+        return `G30 X${x.toFixed(3)} Y${y.toFixed(3)}`;
     }
 
     async requestPointRefresh(row, col, cell, button) {
@@ -1201,6 +1461,13 @@ class MeshViewer {
             return;
         }
 
+        const coordinates = this.getMeshPointCoordinates(row, col);
+        const pointCommand = this.buildPointProbeCommand(row, col, coordinates);
+        if (!pointCommand) {
+            this.notify('Impossible de déterminer les coordonnées de ce point pour lancer un palpage.', 'error');
+            return;
+        }
+
         const originalContent = button.innerHTML;
         button.disabled = true;
         button.classList.add('loading');
@@ -1214,7 +1481,9 @@ class MeshViewer {
             cell,
             button,
             originalContent,
-            command: this.buildPointProbeCommand(row, col)
+            command: pointCommand,
+            machineId: this.lastMeshMachineId,
+            coordinates
         };
 
         try {
@@ -1277,7 +1546,6 @@ class MeshViewer {
                 }
             });
 
-            const pointCommand = this.buildPointProbeCommand(row, col);
             const encoder = new TextEncoder();
             let writer = null;
             try {
@@ -2467,7 +2735,7 @@ class MeshViewer {
             return;
         }
 
-        const { row, col, cell, button, originalContent } = this.pointRefreshState;
+        const { row, col, cell, button, originalContent, machineId, coordinates } = this.pointRefreshState;
 
         if (button) {
             button.disabled = false;
@@ -2495,8 +2763,16 @@ class MeshViewer {
         this.machineDataBuffer = null;
         this.autoImportDone = false;
 
-        if (this.meshData && Array.isArray(this.meshData.matrix)) {
-            this.meshData.matrix[row][col] = value;
+        let numericValue = value;
+        if (typeof numericValue !== 'number') {
+            numericValue = parseFloat(numericValue);
+        }
+        if (Number.isNaN(numericValue)) {
+            numericValue = null;
+        }
+
+        if (this.meshData && Array.isArray(this.meshData.matrix) && numericValue !== null) {
+            this.meshData.matrix[row][col] = numericValue;
             this.markMeshDataDirty();
 
             const stats = this.calculateStats(this.meshData.matrix);
@@ -2504,7 +2780,7 @@ class MeshViewer {
             this.maxValue = stats.max;
 
             if (cell) {
-                this.applyValueToCell(cell, value, stats);
+                this.applyValueToCell(cell, numericValue, stats);
                 cell.classList.add('mesh-cell-refreshed');
                 setTimeout(() => {
                     if (cell && cell.classList) {
@@ -2518,9 +2794,95 @@ class MeshViewer {
             this.updateMatrixColors(stats.min, stats.max);
         }
 
-        this.notify(`Valeur du point (${row + 1}, ${col + 1}) mise à jour: ${value.toFixed(3)} mm`, 'success');
+        const pointCoordinates = coordinates || this.getMeshPointCoordinates(row, col) || {};
+        let coordinateSuffix = '';
+        if (Number.isFinite(pointCoordinates.x) && Number.isFinite(pointCoordinates.y)) {
+            coordinateSuffix = ` (X=${pointCoordinates.x.toFixed(2)} Y=${pointCoordinates.y.toFixed(2)})`;
+        }
+
+        if (numericValue !== null) {
+            this.notify(`Valeur du point (${row + 1}, ${col + 1})${coordinateSuffix} mise à jour: ${numericValue.toFixed(3)} mm`, 'success');
+        } else {
+            this.notify(`Valeur du point (${row + 1}, ${col + 1})${coordinateSuffix} mise à jour.`, 'success');
+        }
+
+        const targetMachineId = machineId || this.lastMeshMachineId;
+        if (targetMachineId) {
+            this.persistMeshAfterPointRefresh(targetMachineId);
+        }
 
         this.pointRefreshState = null;
+    }
+
+    async persistMeshAfterPointRefresh(machineId) {
+        try {
+            if (typeof MachineManager === 'undefined') {
+                throw new Error('Gestionnaire de machines indisponible.');
+            }
+
+            if (typeof window.machineManager === 'undefined') {
+                window.machineManager = new MachineManager();
+                await window.machineManager.loadMachinesFromDB();
+            }
+
+            const machineManager = window.machineManager;
+            let machine = machineManager.machines.get(machineId);
+
+            if (!machine) {
+                await machineManager.loadMachinesFromDB();
+                machine = machineManager.machines.get(machineId);
+            }
+
+            if (!machine) {
+                throw new Error('Machine introuvable pour la sauvegarde du mesh.');
+            }
+
+            const supportsSerial = typeof navigator !== 'undefined' && 'serial' in navigator;
+            if (!machine.isConnected) {
+                if (!supportsSerial) {
+                    throw new Error('Connexion série indisponible pour sauvegarder le mesh.');
+                }
+
+                const authorizedPorts = await navigator.serial.getPorts();
+                if (authorizedPorts.length > 0) {
+                    await machineManager.connectExistingMachine(machineId);
+                } else {
+                    await machineManager.authorizeAndConnect(machineId);
+                }
+                machine = machineManager.machines.get(machineId);
+            }
+
+            if (!machine || !machine.isConnected || !machine.port) {
+                throw new Error('Impossible d\'accéder au port de la machine pour la sauvegarde du mesh.');
+            }
+
+            const commands = ['G29 S1', 'M500'];
+            const encoder = new TextEncoder();
+
+            for (const command of commands) {
+                let writer;
+                try {
+                    writer = machine.port.writable.getWriter();
+                    await writer.write(encoder.encode(`${command}\n`));
+                } finally {
+                    writer?.releaseLock();
+                }
+
+                await this.delay(150);
+            }
+
+            this.notify('Mesh sauvegardé dans le slot 1 et enregistré dans l\'EEPROM.', 'success');
+        } catch (error) {
+            console.error('Erreur lors de la sauvegarde du mesh:', error);
+            this.notify('Valeur mise à jour, mais la sauvegarde sur la machine a échoué.', 'warning');
+        }
+    }
+
+    delay(ms) {
+        const safeDelay = Number.isFinite(ms) && ms > 0 ? ms : 0;
+        return new Promise((resolve) => {
+            setTimeout(resolve, safeDelay);
+        });
     }
 
     /**
