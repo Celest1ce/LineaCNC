@@ -108,6 +108,24 @@
         #importModal.hidden {
             display: none;
         }
+        .machine-status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.35rem 0.75rem;
+            border-radius: 9999px;
+            transition: all 0.2s ease;
+        }
+        .machine-status-dot {
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 9999px;
+        }
+        .machine-select-chevron {
+            pointer-events: none;
+        }
     </style>
 </head>
 <body class="min-h-screen bg-gray-50 dark:bg-gray-900 font-sans transition-colors duration-200">
@@ -356,27 +374,62 @@
                 </button>
             </div>
             
-            <div class="p-6 overflow-y-auto flex-1">
-                <!-- Commande de récupération -->
-                <div class="mb-6">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Commande de récupération du mesh
-                    </label>
-                    <input 
-                        type="text" 
-                        id="meshCommand"
-                        value="G29 T"
-                        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono text-sm"
-                        placeholder="G29 T"
-                    />
-                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Commande G-code à envoyer pour récupérer les données mesh</p>
+            <div class="p-6 overflow-y-auto flex-1 space-y-6">
+                <div class="rounded-xl border border-blue-100 bg-blue-50/80 p-4 text-sm text-blue-900 shadow-sm dark:border-blue-900/40 dark:bg-blue-900/20 dark:text-blue-100">
+                    <div class="flex items-start gap-3">
+                        <div class="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white shadow-sm dark:bg-blue-500">
+                            <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 18a6 6 0 100-12 6 6 0 000 12z" />
+                            </svg>
+                        </div>
+                        <div class="space-y-2">
+                            <p class="text-base font-semibold">Importez un mesh sans quitter LineaCNC</p>
+                            <p class="text-xs leading-relaxed opacity-80">Connectez votre imprimante 3D via le navigateur pour récupérer instantanément la matrice de nivellement. Les appareils déjà autorisés apparaissent automatiquement dans la liste.</p>
+                        </div>
+                    </div>
                 </div>
-                
-                <!-- Liste des machines -->
+
                 <div>
-                    <h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Machines disponibles</h4>
-                    <div id="machineList" class="space-y-2">
-                        <p class="text-gray-500 dark:text-gray-400 text-sm">Chargement des machines...</p>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200">Commande de récupération du mesh</label>
+                    <div class="mt-2 relative">
+                        <input
+                            type="text"
+                            id="meshCommand"
+                            value="G29 T"
+                            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-sm text-gray-900 shadow-sm transition-all duration-200 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                            placeholder="G29 T"
+                            aria-label="Commande de récupération du mesh"
+                        />
+                        <div class="machine-select-chevron absolute inset-y-0 right-3 flex items-center text-gray-400 dark:text-gray-500">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h8m-8 5h8m-8 5h5" />
+                            </svg>
+                        </div>
+                    </div>
+                    <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Adaptez la commande G-code si votre firmware utilise une séquence spécifique pour exporter la matrice complète.</p>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Machines enregistrées</h4>
+                        <button
+                            id="refreshMachineList"
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-blue-900/40 dark:bg-blue-900/30 dark:text-blue-200 dark:hover:bg-blue-900/50"
+                        >
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.003V5.345m-4.003 0l1.624 1.624a8.25 8.25 0 11-5.857-2.42" />
+                            </svg>
+                            Rafraîchir
+                        </button>
+                    </div>
+                    <div id="machineList" class="space-y-3">
+                        <div class="flex items-center gap-3 rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
+                            <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>Chargement des machines...</span>
+                        </div>
                     </div>
                 </div>
             </div>

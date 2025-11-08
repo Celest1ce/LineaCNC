@@ -29,6 +29,7 @@ class MeshViewer {
         this.mesh3DSmoothingLevel = 2; // Niveau de lissage par défaut (5 niveaux disponibles)
         this.mesh3DZScale = 1.0; // Amplitude Z par défaut
         this.lastMeshMachineId = null; // Dernière machine utilisée pour le mesh affiché
+        this.lastMeshMachineUuid = null; // UUID de la machine utilisée pour le dernier mesh
         this.pointRefreshState = null; // État du rafraîchissement d'un point individuel
         this.meshDataVersion = 0;
         this.mesh3DRenderCache = null;
@@ -349,47 +350,63 @@ class MeshViewer {
             const anchor = document.getElementById('gradientType') || document.getElementById('heatmapLegend') || document.getElementById('meshContainer');
             if (!anchor || !anchor.parentElement) return;
 
-            const block = document.createElement('div');
-            block.id = 'autoCorrectionBlock';
-            block.className = 'mt-4 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700';
+        const block = document.createElement('div');
+        block.id = 'autoCorrectionBlock';
+        block.className = 'mt-6 rounded-xl border border-gray-200 bg-white/90 p-4 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-800/90';
+        block.innerHTML = `
+            <div class="flex items-start gap-3">
+                <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 text-white shadow dark:from-blue-400 dark:to-indigo-500">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </div>
+                <div class="flex-1 space-y-3">
+                    <div class="flex items-center justify-between gap-2">
+                        <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">Correction des valeurs manquantes</p>
+                        <span class="machine-status-badge bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
+                            <span class="machine-status-dot bg-blue-500/70"></span>
+                            Intelligent
+                        </span>
+                    </div>
+                    <p class="text-xs leading-relaxed text-gray-600 dark:text-gray-300">L&rsquo;algorithme ajuste un plan virtuel à partir des points valides afin de combler uniquement les cases vides sans altérer vos mesures existantes.</p>
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <button
+                            id="applyAutoCorrection"
+                            type="button"
+                            class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-400 sm:w-auto"
+                        >
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                            </svg>
+                            Corriger les valeurs
+                        </button>
+                        <div id="autoCorrectionInfo" class="hidden text-xs text-gray-500 dark:text-gray-400 sm:flex-1"></div>
+                    </div>
+                </div>
+            </div>
+        `;
 
-            const title = document.createElement('div');
-            title.className = 'text-sm font-semibold text-gray-800 dark:text-gray-100 mb-2';
-            title.textContent = 'Correction automatique des données manquantes';
-
-            const desc = document.createElement('div');
-            desc.className = 'text-xs text-gray-600 dark:text-gray-300 mb-3';
-            desc.textContent = "Ajuste un plan à partir des points existants (plateau plan) et ne remplit que les cases manquantes. Les valeurs existantes ne sont pas modifiées.";
-
-            const btn = document.createElement('button');
-            btn.id = 'applyAutoCorrection';
-            btn.className = 'w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed';
-            btn.textContent = 'Corriger les données manquantes';
-
-            const info = document.createElement('div');
-            info.id = 'autoCorrectionInfo';
-            info.className = 'mt-2 text-xs text-gray-500 dark:text-gray-400 hidden';
-            info.textContent = '';
-
+        const btn = block.querySelector('#applyAutoCorrection');
+        if (btn) {
             btn.addEventListener('click', () => this.autoFillMissingWithPlane());
-
-            block.appendChild(title);
-            block.appendChild(desc);
-            block.appendChild(btn);
-            block.appendChild(info);
-
-            // Insérer juste après l'élément d'ancrage
-            if (anchor.nextSibling) {
-                anchor.parentElement.insertBefore(block, anchor.nextSibling);
-            } else {
-                anchor.parentElement.appendChild(block);
-            }
-
-            this.updateAutoCorrectionAvailability();
-        } catch (e) {
-            // Silencieux si l'UI n'existe pas sur cette page
         }
+
+        const info = block.querySelector('#autoCorrectionInfo');
+        if (info) {
+            info.dataset.messageType = 'info';
+        }
+
+        if (anchor.nextSibling) {
+            anchor.parentElement.insertBefore(block, anchor.nextSibling);
+        } else {
+            anchor.parentElement.appendChild(block);
+        }
+
+        this.updateAutoCorrectionAvailability();
+    } catch (e) {
+        // Silencieux si l'UI n'existe pas sur cette page
     }
+}
 
     /**
      * Remplit uniquement les valeurs manquantes par ajustement plan (moindres carrés)
@@ -1156,6 +1173,12 @@ class MeshViewer {
         }
     }
 
+    buildPointProbeCommand(row, col) {
+        const iIndex = Number.isInteger(col) ? Math.max(0, col) : 0;
+        const jIndex = Number.isInteger(row) ? Math.max(0, row) : 0;
+        return `G29 P4 I${iIndex} J${jIndex}`;
+    }
+
     async requestPointRefresh(row, col, cell, button) {
         if (!this.meshData || !Array.isArray(this.meshData.matrix)) {
             this.notify('Aucun mesh n\'est chargé.', 'error');
@@ -1178,13 +1201,6 @@ class MeshViewer {
             return;
         }
 
-        const meshCommandInput = document.getElementById('meshCommand');
-        const meshCommand = meshCommandInput ? meshCommandInput.value.trim() : 'G29 T';
-        if (!meshCommand) {
-            this.notify('Veuillez définir la commande de récupération du mesh.', 'error');
-            return;
-        }
-
         const originalContent = button.innerHTML;
         button.disabled = true;
         button.classList.add('loading');
@@ -1197,7 +1213,8 @@ class MeshViewer {
             status: 'loading',
             cell,
             button,
-            originalContent
+            originalContent,
+            command: this.buildPointProbeCommand(row, col)
         };
 
         try {
@@ -1260,16 +1277,17 @@ class MeshViewer {
                 }
             });
 
+            const pointCommand = this.buildPointProbeCommand(row, col);
             const encoder = new TextEncoder();
             let writer = null;
             try {
                 writer = machine.port.writable.getWriter();
-                await writer.write(encoder.encode(`${meshCommand}\n`));
+                await writer.write(encoder.encode(`${pointCommand}\n`));
             } finally {
                 writer?.releaseLock();
             }
 
-            this.collectMachineData(`> ${meshCommand}\n`);
+            this.collectMachineData(`> ${pointCommand}\n`);
             if (this.pointRefreshState) {
                 this.pointRefreshState.status = 'awaiting-data';
             }
@@ -1965,6 +1983,7 @@ class MeshViewer {
         this.markMeshDataDirty();
         this.renderMatrix(meshData);
         this.lastMeshMachineId = null;
+        this.lastMeshMachineUuid = null;
 
         // Fermer le modal après import réussi
         this.closeImportModal();
@@ -1981,17 +2000,39 @@ class MeshViewer {
     /**
      * Affiche le modal de sélection de machine
      */
-    async showMachineSelection() {
+    async showMachineSelection(preferredUuid = null) {
         const machineSelectModal = document.getElementById('machineSelectModal');
         const machineList = document.getElementById('machineList');
-        
+        const refreshButton = document.getElementById('refreshMachineList');
+
         if (!machineSelectModal || !machineList) return;
-        
+
+        const currentDropdown = document.getElementById('machineDropdown');
+        const lastSelection = preferredUuid || currentDropdown?.value || this.lastMeshMachineUuid || null;
+
         machineSelectModal.classList.remove('hidden');
-        machineList.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-sm">Chargement des machines...</p>';
-        
+        machineList.innerHTML = `
+            <div class="flex items-center gap-3 rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
+                <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>Chargement des machines...</span>
+            </div>
+        `;
+
+        if (refreshButton && refreshButton.dataset.bound !== 'true') {
+            refreshButton.addEventListener('click', () => {
+                const dropdown = document.getElementById('machineDropdown');
+                const current = dropdown ? dropdown.value : null;
+                refreshButton.classList.add('animate-pulse');
+                this.showMachineSelection(current || null).finally(() => {
+                    setTimeout(() => refreshButton.classList.remove('animate-pulse'), 300);
+                });
+            });
+            refreshButton.dataset.bound = 'true';
+        }
+
         try {
-            // Récupérer les machines depuis la BDD
             const response = await fetch('/api/machines', {
                 method: 'GET',
                 headers: {
@@ -1999,73 +2040,314 @@ class MeshViewer {
                     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
                 }
             });
-            
+
             if (!response.ok) {
                 throw new Error('Erreur lors de la récupération des machines');
             }
-            
+
             const machines = await response.json();
-            
-            if (machines.length === 0) {
-                machineList.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-sm">Aucune machine enregistrée. Veuillez ajouter une machine depuis le dashboard.</p>';
-                return;
-            }
-            
-            // Obtenir l'état des machines connectées si MachineManager est disponible
-            let connectedMachineIds = new Set();
-            if (typeof window.machineManager !== 'undefined') {
-                connectedMachineIds = new Set(
-                    Array.from(window.machineManager.machines.values())
-                        .filter(m => m.isConnected)
-                        .map(m => m.uuid)
-                );
-            }
-            
-            // Afficher la liste des machines
-            machineList.innerHTML = machines.map(machine => {
-                const isConnected = connectedMachineIds.has(machine.uuid);
-                return `
-                    <div class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 mb-2">
-                        <div class="flex-1">
-                            <div class="font-medium text-gray-900 dark:text-gray-100 flex items-center space-x-2">
-                                <span>${machine.name || 'Machine sans nom'}</span>
-                                ${isConnected ? '<span class="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded">Connectée</span>' : ''}
-                            </div>
-                            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                ${machine.baud_rate || 115200} baud${machine.last_port ? ` • ${machine.last_port}` : ''}
-                            </div>
-                        </div>
-                        <button 
-                            class="ml-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                            data-machine-uuid="${machine.uuid}"
-                            data-machine-name="${machine.name || 'Machine'}"
-                            data-machine-baud="${machine.baud_rate || 115200}"
-                            data-machine-port="${machine.last_port || ''}"
-                            ${isConnected ? '' : ''}
-                        >
-                            Connecter
-                        </button>
-                    </div>
-                `;
-            }).join('');
-            
-            // Ajouter les event listeners
-            machineList.querySelectorAll('button[data-machine-uuid]').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    const machineData = {
-                        uuid: btn.dataset.machineUuid,
-                        name: btn.dataset.machineName,
-                        baudRate: parseInt(btn.dataset.machineBaud),
-                        port: btn.dataset.machinePort
-                    };
-                    await this.connectAndImportFromMachine(machineData, e);
-                });
-            });
-            
+            const connectedMachineIds = this.getConnectedMachineUuidSet();
+
+            this.renderMachineSelection(machines, connectedMachineIds, lastSelection);
         } catch (error) {
             console.error('Erreur lors du chargement des machines:', error);
-            machineList.innerHTML = `<p class="text-red-600 dark:text-red-400 text-sm">Erreur: ${error.message}</p>`;
+            machineList.innerHTML = `
+                <div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/30 dark:text-red-200">
+                    Erreur&nbsp;: ${this.escapeHtml(error.message || 'Chargement impossible')}
+                </div>
+            `;
         }
+    }
+
+    getConnectedMachineUuidSet() {
+        const connected = new Set();
+        if (typeof window.machineManager !== 'undefined' && window.machineManager?.machines) {
+            window.machineManager.machines.forEach((machine) => {
+                if (machine && machine.uuid && machine.isConnected) {
+                    connected.add(machine.uuid);
+                }
+            });
+        }
+        return connected;
+    }
+
+    renderMachineSelection(machines, connectedMachineIds, selectedUuid) {
+        const machineList = document.getElementById('machineList');
+        if (!machineList) return;
+
+        if (!Array.isArray(machines) || machines.length === 0) {
+            machineList.innerHTML = `
+                <div class="space-y-3 rounded-lg border border-dashed border-gray-300 bg-white/70 p-6 text-sm text-gray-600 dark:border-gray-600 dark:bg-gray-800/70 dark:text-gray-300">
+                    <div class="flex items-start gap-3">
+                        <svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 18a6 6 0 100-12 6 6 0 000 12z" />
+                        </svg>
+                        <div>
+                            <p class="font-semibold text-gray-800 dark:text-gray-100">Aucune machine enregistrée</p>
+                            <p class="mt-1 text-xs leading-relaxed">Ajoutez votre première machine pour importer un mesh directement depuis l&rsquo;imprimante.</p>
+                        </div>
+                    </div>
+                    <button
+                        id="addMachineFromModal"
+                        type="button"
+                        class="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                        Ajouter une machine
+                    </button>
+                </div>
+            `;
+
+            const addBtn = document.getElementById('addMachineFromModal');
+            if (addBtn) {
+                addBtn.addEventListener('click', () => this.handleAddMachineFromModal(addBtn));
+            }
+            return;
+        }
+
+        const sortedMachines = [...machines].sort((a, b) => {
+            const aConnected = connectedMachineIds.has(a.uuid);
+            const bConnected = connectedMachineIds.has(b.uuid);
+            if (aConnected !== bConnected) {
+                return aConnected ? -1 : 1;
+            }
+            const aName = (a.name || '').toLowerCase();
+            const bName = (b.name || '').toLowerCase();
+            return aName.localeCompare(bName);
+        });
+
+        machineList.innerHTML = `
+            <div class="space-y-5" id="machineSelectionWrapper">
+                <div>
+                    <label for="machineDropdown" class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Machine à interroger</label>
+                    <div class="relative mt-2">
+                        <select
+                            id="machineDropdown"
+                            class="w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 shadow-sm transition focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                        ></select>
+                        <span class="machine-select-chevron absolute inset-y-0 right-3 flex items-center text-gray-400 dark:text-gray-500">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 9.75l3.75 3.75 3.75-3.75" />
+                            </svg>
+                        </span>
+                    </div>
+                    <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                        <span id="machineStatusBadge" class="machine-status-badge bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200">
+                            <span id="machineStatusDot" class="machine-status-dot bg-gray-400"></span>
+                            <span id="machineStatusLabel">En attente</span>
+                        </span>
+                        <span id="machineStatusHint" class="text-xs">Sélectionnez une machine disponible.</span>
+                    </div>
+                    <p id="machineSelectionDetails" class="mt-2 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                        Choisissez une machine pour lancer l&rsquo;import depuis le plateau.
+                    </p>
+                </div>
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <button
+                        id="connectSelectedMachine"
+                        type="button"
+                        class="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white shadow transition hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:cursor-not-allowed disabled:bg-gray-400 sm:w-auto"
+                    >
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25M21 12H9" />
+                        </svg>
+                        Importer depuis la machine
+                    </button>
+                    <button
+                        id="addMachineFromModal"
+                        type="button"
+                        class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600 sm:w-auto"
+                    >
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                        Ajouter une machine
+                    </button>
+                </div>
+                <div class="rounded-lg border border-dashed border-gray-300 p-4 text-xs text-gray-500 dark:border-gray-600 dark:text-gray-400">
+                    <p class="font-medium text-gray-700 dark:text-gray-200">Astuce</p>
+                    <p class="mt-1 leading-relaxed">Assurez-vous d&rsquo;avoir autorisé la machine via le navigateur avant d&rsquo;importer un mesh.</p>
+                </div>
+            </div>
+        `;
+
+        const dropdown = document.getElementById('machineDropdown');
+        if (!dropdown) {
+            return;
+        }
+
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Sélectionnez une machine';
+        placeholder.disabled = true;
+        dropdown.appendChild(placeholder);
+
+        let selectionApplied = false;
+        sortedMachines.forEach((machine) => {
+            const option = document.createElement('option');
+            option.value = machine.uuid;
+            option.textContent = `${machine.name || 'Machine sans nom'}${machine.last_port ? ` — ${machine.last_port}` : ''}`;
+            option.dataset.name = machine.name || 'Machine';
+            option.dataset.baud = machine.baud_rate ? String(machine.baud_rate) : '115200';
+            option.dataset.port = machine.last_port || '';
+            option.dataset.connected = connectedMachineIds.has(machine.uuid) ? 'true' : 'false';
+            dropdown.appendChild(option);
+            if (!selectionApplied && selectedUuid && machine.uuid === selectedUuid) {
+                option.selected = true;
+                selectionApplied = true;
+            }
+        });
+
+        if (!selectionApplied && dropdown.options.length > 1) {
+            dropdown.selectedIndex = 1;
+        } else if (!selectionApplied) {
+            placeholder.selected = true;
+        }
+
+        const addBtn = document.getElementById('addMachineFromModal');
+        if (addBtn) {
+            addBtn.addEventListener('click', () => this.handleAddMachineFromModal(addBtn));
+        }
+
+        this.setupMachineSelectionInteractions();
+    }
+
+    setupMachineSelectionInteractions() {
+        const dropdown = document.getElementById('machineDropdown');
+        const connectBtn = document.getElementById('connectSelectedMachine');
+        const statusBadge = document.getElementById('machineStatusBadge');
+        const statusDot = document.getElementById('machineStatusDot');
+        const statusLabel = document.getElementById('machineStatusLabel');
+        const statusHint = document.getElementById('machineStatusHint');
+        const detailsElement = document.getElementById('machineSelectionDetails');
+
+        const update = () => {
+            this.updateMachineSelectionDetails({ dropdown, statusBadge, statusDot, statusLabel, statusHint, detailsElement });
+            if (connectBtn) {
+                connectBtn.disabled = !(dropdown && dropdown.value);
+            }
+        };
+
+        if (dropdown) {
+            dropdown.addEventListener('change', update);
+        }
+
+        if (connectBtn) {
+            connectBtn.addEventListener('click', (event) => {
+                if (!dropdown || !dropdown.value) {
+                    this.notify('Sélectionnez une machine à connecter.', 'warning');
+                    return;
+                }
+                const option = dropdown.selectedOptions[0];
+                const machineData = {
+                    uuid: option.value,
+                    name: option.dataset.name,
+                    baudRate: parseInt(option.dataset.baud, 10),
+                    port: option.dataset.port
+                };
+                this.connectAndImportFromMachine(machineData, event);
+            });
+        }
+
+        update();
+    }
+
+    updateMachineSelectionDetails({ dropdown, statusBadge, statusDot, statusLabel, statusHint, detailsElement }) {
+        if (!dropdown || !statusBadge || !statusDot || !statusLabel || !detailsElement) {
+            return;
+        }
+
+        const option = dropdown.selectedOptions?.[0];
+        if (!option || !option.value) {
+            statusBadge.classList.remove('bg-green-100', 'text-green-700', 'dark:bg-green-900/40', 'dark:text-green-200', 'bg-amber-100', 'text-amber-700', 'dark:bg-amber-900/40', 'dark:text-amber-200');
+            statusBadge.classList.add('bg-gray-100', 'text-gray-700', 'dark:bg-gray-700', 'dark:text-gray-200');
+            statusDot.style.backgroundColor = '#9ca3af';
+            statusLabel.textContent = 'En attente';
+            if (statusHint) {
+                statusHint.textContent = 'Sélectionnez une machine disponible.';
+            }
+            detailsElement.textContent = 'Choisissez une machine pour lancer l’import depuis le plateau.';
+            return;
+        }
+
+        const name = option.dataset.name || 'Machine';
+        const port = option.dataset.port ? `Port ${option.dataset.port}` : 'Port inconnu';
+        const baud = option.dataset.baud ? `${option.dataset.baud} bauds` : 'Vitesse non définie';
+        const isConnected = option.dataset.connected === 'true';
+
+        statusBadge.classList.remove('bg-gray-100', 'text-gray-700', 'dark:bg-gray-700', 'dark:text-gray-200', 'bg-amber-100', 'text-amber-700', 'dark:bg-amber-900/40', 'dark:text-amber-200', 'bg-green-100', 'text-green-700', 'dark:bg-green-900/40', 'dark:text-green-200');
+
+        if (isConnected) {
+            statusBadge.classList.add('bg-green-100', 'text-green-700', 'dark:bg-green-900/40', 'dark:text-green-200');
+            statusDot.style.backgroundColor = '#16a34a';
+            statusLabel.textContent = 'Connectée';
+            if (statusHint) {
+                statusHint.textContent = 'La liaison série est prête pour les commandes.';
+            }
+        } else {
+            statusBadge.classList.add('bg-amber-100', 'text-amber-700', 'dark:bg-amber-900/40', 'dark:text-amber-200');
+            statusDot.style.backgroundColor = '#d97706';
+            statusLabel.textContent = 'Autorisation requise';
+            if (statusHint) {
+                statusHint.textContent = 'L’autorisation série sera demandée lors de l’import.';
+            }
+        }
+
+        detailsElement.textContent = `Machine « ${name} » — ${port}, ${baud}.`;
+    }
+
+    async handleAddMachineFromModal(button) {
+        const supportsSerial = typeof navigator !== 'undefined' && 'serial' in navigator;
+        if (!supportsSerial) {
+            this.notify('La Web Serial API n’est pas disponible sur ce navigateur.', 'error');
+            return;
+        }
+
+        let originalContent = null;
+        if (button) {
+            button.disabled = true;
+            originalContent = button.innerHTML;
+            button.innerHTML = '<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V2C5.373 2 2 5.373 2 12h2zm2 5.291A7.962 7.962 0 014 12H2c0 3.042 1.135 5.824 3 7.938l1-2.647z"></path></svg>';
+        }
+
+        try {
+            if (typeof MachineManager === 'undefined') {
+                throw new Error('Le gestionnaire de machines n’est pas disponible.');
+            }
+
+            if (typeof window.machineManager === 'undefined') {
+                window.machineManager = new MachineManager();
+                await window.machineManager.loadMachinesFromDB();
+            }
+
+            await window.machineManager.addMachine();
+            await this.showMachineSelection();
+        } catch (error) {
+            console.error('Erreur lors de l’ajout de la machine depuis le mesh viewer:', error);
+            const message = error?.message || 'Impossible d’ajouter la machine.';
+            this.notify(message, 'error');
+        } finally {
+            if (button) {
+                button.disabled = false;
+                if (originalContent) {
+                    button.innerHTML = originalContent;
+                }
+            }
+        }
+    }
+
+    escapeHtml(value) {
+        if (value === null || value === undefined) {
+            return '';
+        }
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
     
     /**
@@ -2098,19 +2380,157 @@ class MeshViewer {
             this.machineDataBuffer = '';
         }
         this.machineDataBuffer += text;
-        
+
         // Log pour débogage
         console.log('Données collectées:', text.substring(0, 100));
         console.log('Buffer total:', this.machineDataBuffer.length, 'caractères');
-        
-        // Vérifier si la réponse est complète
-        this.checkAndImportFromBuffer();
+
+        if (this.pointRefreshState) {
+            this.tryFinalizePointRefresh();
+        } else {
+            // Vérifier si la réponse est complète
+            this.checkAndImportFromBuffer();
+        }
     }
-    
+
+    tryFinalizePointRefresh() {
+        if (!this.pointRefreshState || !this.machineDataBuffer) {
+            return;
+        }
+
+        const buffer = this.machineDataBuffer;
+        const hasOk = /(^|\n|\r)ok\b/i.test(buffer.trim());
+        if (!hasOk) {
+            return;
+        }
+
+        const value = this.parsePointProbeValueFromBuffer(buffer);
+        if (typeof value !== 'number' || Number.isNaN(value)) {
+            this.failPointRefresh('Impossible d’interpréter la réponse de la machine pour ce point.');
+            return;
+        }
+
+        this.finalizePointRefresh(value);
+    }
+
+    parsePointProbeValueFromBuffer(text) {
+        if (!text) {
+            return null;
+        }
+
+        const sanitized = text.replace(/\r/g, '\n');
+        const lines = sanitized.split('\n').map(line => line.trim()).filter(Boolean);
+        const candidates = [];
+
+        for (const line of lines) {
+            if (!line || line.startsWith('>') || /^ok\b/i.test(line)) {
+                continue;
+            }
+
+            const zMatch = line.match(/(?:^|\s)Z[:=]\s*([+-]?\d+(?:\.\d+)?)/i);
+            if (zMatch) {
+                const parsed = parseFloat(zMatch[1]);
+                if (!Number.isNaN(parsed)) {
+                    return parsed;
+                }
+            }
+
+            const explicitMatch = line.match(/(?:value|mesure|hauteur|height|offset)[:=\s]+([+-]?\d+(?:\.\d+)?)/i);
+            if (explicitMatch) {
+                const parsed = parseFloat(explicitMatch[1]);
+                if (!Number.isNaN(parsed)) {
+                    candidates.push(parsed);
+                    continue;
+                }
+            }
+
+            const decimals = line.match(/[+-]?\d+\.\d+/g);
+            if (decimals) {
+                decimals.forEach((item) => {
+                    const parsed = parseFloat(item);
+                    if (!Number.isNaN(parsed)) {
+                        candidates.push(parsed);
+                    }
+                });
+            }
+        }
+
+        if (candidates.length > 0) {
+            return candidates[candidates.length - 1];
+        }
+
+        return null;
+    }
+
+    finalizePointRefresh(value) {
+        if (!this.pointRefreshState) {
+            return;
+        }
+
+        const { row, col, cell, button, originalContent } = this.pointRefreshState;
+
+        if (button) {
+            button.disabled = false;
+            button.classList.remove('loading');
+            if (typeof originalContent === 'string') {
+                button.innerHTML = originalContent;
+            }
+        }
+
+        if (cell) {
+            cell.classList.remove('mesh-cell-refreshing');
+        }
+
+        if (typeof this.serialUnsubscribe === 'function') {
+            this.serialUnsubscribe();
+            this.serialUnsubscribe = null;
+        }
+
+        if (this.importTimeout) {
+            clearTimeout(this.importTimeout);
+            this.importTimeout = null;
+        }
+
+        this.currentMeshMachineId = null;
+        this.machineDataBuffer = null;
+        this.autoImportDone = false;
+
+        if (this.meshData && Array.isArray(this.meshData.matrix)) {
+            this.meshData.matrix[row][col] = value;
+            this.markMeshDataDirty();
+
+            const stats = this.calculateStats(this.meshData.matrix);
+            this.minValue = stats.min;
+            this.maxValue = stats.max;
+
+            if (cell) {
+                this.applyValueToCell(cell, value, stats);
+                cell.classList.add('mesh-cell-refreshed');
+                setTimeout(() => {
+                    if (cell && cell.classList) {
+                        cell.classList.remove('mesh-cell-refreshed');
+                    }
+                }, 1200);
+            }
+
+            this.updateStats(stats, this.meshData.rows, this.meshData.cols);
+            this.updateLegend(stats.min, stats.max);
+            this.updateMatrixColors(stats.min, stats.max);
+        }
+
+        this.notify(`Valeur du point (${row + 1}, ${col + 1}) mise à jour: ${value.toFixed(3)} mm`, 'success');
+
+        this.pointRefreshState = null;
+    }
+
     /**
      * Vérifie si la réponse est complète dans le buffer et importe automatiquement
      */
     checkAndImportFromBuffer() {
+        if (this.pointRefreshState) {
+            return;
+        }
+
         if (!this.machineDataBuffer) return;
         
         const lines = this.machineDataBuffer.split('\n');
@@ -2214,6 +2634,8 @@ class MeshViewer {
             this.notify('Veuillez saisir une commande de récupération.', 'error');
             return;
         }
+
+        this.lastMeshMachineUuid = machineData?.uuid || null;
 
         const supportsSerial = typeof navigator !== 'undefined' && 'serial' in navigator;
         if (!supportsSerial) {
