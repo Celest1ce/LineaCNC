@@ -1,4 +1,173 @@
 /**
+ * Gestionnaire de cache pour les zones de travail des machines.
+ */
+class MachineWorkspaceCache {
+    constructor() {
+        this.cache = new Map();
+        this.pending = new Map();
+    }
+
+    static parseNumber(value) {
+        if (value === null || value === undefined) {
+            return null;
+        }
+
+        if (typeof value === 'number') {
+            return Number.isFinite(value) ? value : null;
+        }
+
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return null;
+            }
+
+            const normalized = trimmed.replace(/,/g, '.');
+            const match = normalized.match(/-?\d+(?:\.\d+)?/);
+            if (!match) {
+                return null;
+            }
+
+            const parsed = parseFloat(match[0]);
+            return Number.isNaN(parsed) ? null : parsed;
+        }
+
+        return null;
+    }
+
+    static sanitizeWorkspace(workspace) {
+        if (!workspace || typeof workspace !== 'object') {
+            return null;
+        }
+
+        const sanitized = {
+            xMin: MachineWorkspaceCache.parseNumber(workspace.xMin ?? workspace.minX ?? workspace.x_min ?? workspace.xmin),
+            xMax: MachineWorkspaceCache.parseNumber(workspace.xMax ?? workspace.maxX ?? workspace.x_max ?? workspace.xmax),
+            yMin: MachineWorkspaceCache.parseNumber(workspace.yMin ?? workspace.minY ?? workspace.y_min ?? workspace.ymin),
+            yMax: MachineWorkspaceCache.parseNumber(workspace.yMax ?? workspace.maxY ?? workspace.y_max ?? workspace.ymax),
+            width: MachineWorkspaceCache.parseNumber(workspace.width ?? workspace.sizeX ?? workspace.widthX ?? workspace.xSize),
+            depth: MachineWorkspaceCache.parseNumber(workspace.depth ?? workspace.sizeY ?? workspace.ySize ?? workspace.length ?? workspace.size),
+            originX: MachineWorkspaceCache.parseNumber(workspace.originX ?? workspace.xOrigin ?? workspace.origin_x ?? workspace.x0 ?? workspace.startX),
+            originY: MachineWorkspaceCache.parseNumber(workspace.originY ?? workspace.yOrigin ?? workspace.origin_y ?? workspace.y0 ?? workspace.startY)
+        };
+
+        if (sanitized.xMin === null && sanitized.originX !== null) {
+            sanitized.xMin = sanitized.originX;
+        }
+        if (sanitized.yMin === null && sanitized.originY !== null) {
+            sanitized.yMin = sanitized.originY;
+        }
+
+        if (sanitized.width === null && sanitized.xMin !== null && sanitized.xMax !== null) {
+            sanitized.width = sanitized.xMax - sanitized.xMin;
+        }
+        if (sanitized.depth === null && sanitized.yMin !== null && sanitized.yMax !== null) {
+            sanitized.depth = sanitized.yMax - sanitized.yMin;
+        }
+
+        if (sanitized.width !== null && sanitized.width < 0) {
+            sanitized.width = Math.abs(sanitized.width);
+        }
+        if (sanitized.depth !== null && sanitized.depth < 0) {
+            sanitized.depth = Math.abs(sanitized.depth);
+        }
+
+        if (sanitized.xMax === null && sanitized.xMin !== null && sanitized.width !== null) {
+            sanitized.xMax = sanitized.xMin + sanitized.width;
+        }
+        if (sanitized.xMin === null && sanitized.xMax !== null && sanitized.width !== null) {
+            sanitized.xMin = sanitized.xMax - sanitized.width;
+        }
+        if (sanitized.yMax === null && sanitized.yMin !== null && sanitized.depth !== null) {
+            sanitized.yMax = sanitized.yMin + sanitized.depth;
+        }
+        if (sanitized.yMin === null && sanitized.yMax !== null && sanitized.depth !== null) {
+            sanitized.yMin = sanitized.yMax - sanitized.depth;
+        }
+
+        if (sanitized.xMin !== null && sanitized.xMax !== null && sanitized.xMin > sanitized.xMax) {
+            const tmp = sanitized.xMin;
+            sanitized.xMin = sanitized.xMax;
+            sanitized.xMax = tmp;
+        }
+        if (sanitized.yMin !== null && sanitized.yMax !== null && sanitized.yMin > sanitized.yMax) {
+            const tmp = sanitized.yMin;
+            sanitized.yMin = sanitized.yMax;
+            sanitized.yMax = tmp;
+        }
+
+        if (sanitized.width === null && sanitized.xMin !== null && sanitized.xMax !== null) {
+            sanitized.width = sanitized.xMax - sanitized.xMin;
+        }
+        if (sanitized.depth === null && sanitized.yMin !== null && sanitized.yMax !== null) {
+            sanitized.depth = sanitized.yMax - sanitized.yMin;
+        }
+
+        const hasXRange = Number.isFinite(sanitized.xMin) && Number.isFinite(sanitized.xMax);
+        const hasYRange = Number.isFinite(sanitized.yMin) && Number.isFinite(sanitized.yMax);
+
+        if (!hasXRange && !hasYRange) {
+            return null;
+        }
+
+        return sanitized;
+    }
+
+    async getWorkspace(uuid) {
+        if (!uuid) {
+            return null;
+        }
+
+        if (this.cache.has(uuid)) {
+            return this.cache.get(uuid);
+        }
+
+        if (this.pending.has(uuid)) {
+            return this.pending.get(uuid);
+        }
+
+        const promise = this.fetchWorkspace(uuid)
+            .catch((error) => {
+                console.error('Erreur lors de la récupération de la zone de travail:', error);
+                return null;
+            })
+            .finally(() => {
+                this.pending.delete(uuid);
+            });
+
+        this.pending.set(uuid, promise);
+        const workspace = await promise;
+        this.cache.set(uuid, workspace);
+        return workspace;
+    }
+
+    async fetchWorkspace(uuid) {
+        try {
+            const response = await fetch(`/api/machines/${encodeURIComponent(uuid)}/workspace`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                }
+            });
+
+            if (response.status === 404) {
+                return null;
+            }
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const payload = await response.json();
+            return MachineWorkspaceCache.sanitizeWorkspace(payload?.workspace ?? null);
+        } catch (error) {
+            throw error;
+        }
+    }
+}
+
+/**
  * Gestionnaire du Mesh Viewer
  */
 
@@ -36,6 +205,10 @@ class MeshViewer {
         this.pendingRender3D = false;
         this.animationId = null;
         this.is3DInteracting = false;
+
+        this.machineWorkspaceCache = new MachineWorkspaceCache();
+        this.machineWorkspaces = new Map();
+        this.lastMeshMachineWorkspace = null;
 
         this.loadMesh3DPreferences();
         this.init();
@@ -1204,7 +1377,85 @@ class MeshViewer {
         if (legendMin) legendMin.textContent = min.toFixed(3);
         if (legendMax) legendMax.textContent = max.toFixed(3);
     }
-    
+
+    async ensureMachineWorkspace(machineUuid) {
+        if (!machineUuid) {
+            return null;
+        }
+
+        if (this.machineWorkspaces.has(machineUuid)) {
+            return this.machineWorkspaces.get(machineUuid);
+        }
+
+        try {
+            const workspace = await this.machineWorkspaceCache.getWorkspace(machineUuid);
+            if (workspace) {
+                this.machineWorkspaces.set(machineUuid, workspace);
+                return workspace;
+            }
+        } catch (error) {
+            console.error('Impossible de récupérer la zone de travail de la machine:', error);
+        }
+
+        return null;
+    }
+
+    applyWorkspaceToMesh(meshData, workspace) {
+        if (!meshData || typeof meshData !== 'object') {
+            return;
+        }
+
+        const sanitized = MachineWorkspaceCache.sanitizeWorkspace(workspace);
+        if (!sanitized) {
+            return;
+        }
+
+        meshData.machineWorkspace = sanitized;
+        this.lastMeshMachineWorkspace = sanitized;
+
+        const hasXRange = Number.isFinite(sanitized.xMin) && Number.isFinite(sanitized.xMax);
+        const hasYRange = Number.isFinite(sanitized.yMin) && Number.isFinite(sanitized.yMax);
+
+        if (hasXRange) {
+            meshData.xRange = { min: sanitized.xMin, max: sanitized.xMax };
+            if (!Array.isArray(meshData.xCoordinates) || meshData.xCoordinates.length !== meshData.cols) {
+                const positions = this.generateAxisPositions(sanitized.xMin, sanitized.xMax, meshData.cols);
+                if (positions) {
+                    meshData.xCoordinates = positions;
+                }
+            }
+        }
+
+        if (hasYRange) {
+            meshData.yRange = { min: sanitized.yMin, max: sanitized.yMax };
+            if (!Array.isArray(meshData.yCoordinates) || meshData.yCoordinates.length !== meshData.rows) {
+                const positions = this.generateAxisPositions(sanitized.yMax, sanitized.yMin, meshData.rows);
+                if (positions) {
+                    meshData.yCoordinates = positions;
+                }
+            }
+        }
+    }
+
+    generateAxisPositions(start, end, count) {
+        if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isInteger(count) || count <= 0) {
+            return null;
+        }
+
+        if (count === 1) {
+            return [parseFloat(start.toFixed(3))];
+        }
+
+        const step = (end - start) / (count - 1);
+        const positions = [];
+
+        for (let index = 0; index < count; index += 1) {
+            const value = start + (step * index);
+            positions.push(parseFloat(value.toFixed(3)));
+        }
+        return positions;
+    }
+
     createCellRefreshButton() {
         const button = document.createElement('button');
         button.type = 'button';
@@ -1448,6 +1699,10 @@ class MeshViewer {
         if (!this.lastMeshMachineId) {
             this.notify('Importez d\'abord un mesh depuis la machine pour rafraîchir un point.', 'error');
             return;
+        }
+
+        if (this.lastMeshMachineUuid && !this.machineWorkspaces.has(this.lastMeshMachineUuid)) {
+            await this.ensureMachineWorkspace(this.lastMeshMachineUuid);
         }
 
         if (this.pointRefreshState) {
@@ -2248,8 +2503,17 @@ class MeshViewer {
         }
 
         this.meshData = meshData;
+
+        const importUuid = this.lastMeshMachineUuid;
+        if (importUuid) {
+            const workspace = this.machineWorkspaces.get(importUuid) || this.lastMeshMachineWorkspace;
+            if (workspace) {
+                this.applyWorkspaceToMesh(this.meshData, workspace);
+            }
+        }
+
         this.markMeshDataDirty();
-        this.renderMatrix(meshData);
+        this.renderMatrix(this.meshData);
         this.lastMeshMachineId = null;
         this.lastMeshMachineUuid = null;
 
@@ -2960,8 +3224,17 @@ class MeshViewer {
 
         // Importer les données
         this.meshData = meshData;
+
+        const importUuid = this.lastMeshMachineUuid;
+        if (importUuid) {
+            const workspace = this.machineWorkspaces.get(importUuid) || this.lastMeshMachineWorkspace;
+            if (workspace) {
+                this.applyWorkspaceToMesh(this.meshData, workspace);
+            }
+        }
+
         this.markMeshDataDirty();
-        this.renderMatrix(meshData);
+        this.renderMatrix(this.meshData);
 
         if (this.currentMeshMachineId !== null && this.currentMeshMachineId !== undefined) {
             this.lastMeshMachineId = this.currentMeshMachineId;
@@ -3049,6 +3322,11 @@ class MeshViewer {
                 throw new Error('Machine non trouvée dans le gestionnaire.');
             }
 
+            let machineWorkspace = null;
+            if (machine.uuid) {
+                machineWorkspace = await this.ensureMachineWorkspace(machine.uuid);
+            }
+
             if (!machine.isConnected) {
                 const hasAuthorizedPorts = 'serial' in navigator && (await navigator.serial.getPorts()).length > 0;
                 if (hasAuthorizedPorts) {
@@ -3057,10 +3335,18 @@ class MeshViewer {
                     await window.machineManager.authorizeAndConnect(machineId);
                 }
                 machine = window.machineManager.machines.get(machineId);
+                if (!machineWorkspace && machine?.uuid) {
+                    machineWorkspace = await this.ensureMachineWorkspace(machine.uuid);
+                }
             }
 
             if (!machine || !machine.isConnected || !machine.port) {
                 throw new Error('Impossible de connecter la machine. Veuillez vérifier la connexion série.');
+            }
+
+            if (machine.uuid && machineWorkspace) {
+                this.machineWorkspaces.set(machine.uuid, machineWorkspace);
+                this.lastMeshMachineWorkspace = machineWorkspace;
             }
 
             if (!window.machineManager.readers.has(machineId)) {

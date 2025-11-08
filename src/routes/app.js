@@ -22,6 +22,234 @@ const {
   normalizeValueForType
 } = require('../utils/machine-info');
 
+function extractNumericValues(value) {
+  if (value === null || value === undefined) {
+    return [];
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? [value] : [];
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    const normalized = trimmed.replace(/,/g, '.');
+    try {
+      const parsed = JSON.parse(normalized);
+      return extractNumericValues(parsed);
+    } catch (error) {
+      const matches = normalized.match(/-?\d+(?:\.\d+)?/g);
+      if (!matches) {
+        return [];
+      }
+      return matches
+        .map((token) => parseFloat(token))
+        .filter((num) => Number.isFinite(num));
+    }
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => extractNumericValues(item))
+      .filter((num) => Number.isFinite(num));
+  }
+
+  if (typeof value === 'object') {
+    return Object.values(value)
+      .flatMap((item) => extractNumericValues(item))
+      .filter((num) => Number.isFinite(num));
+  }
+
+  return [];
+}
+
+function computeWorkspaceFromParameters(rows = []) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return null;
+  }
+
+  const workspace = {
+    xMin: null,
+    xMax: null,
+    yMin: null,
+    yMax: null,
+    width: null,
+    depth: null,
+    originX: null,
+    originY: null
+  };
+
+  rows.forEach((row) => {
+    const name = typeof row.parameter_name === 'string' ? row.parameter_name.toLowerCase() : '';
+    if (!name) {
+      return;
+    }
+
+    const values = extractNumericValues(row.normalized_value ?? row.raw_value);
+    if (values.length === 0) {
+      return;
+    }
+
+    const firstValue = values[0];
+
+    if (/bed_size_x|build_volume_x|work_size_x|workarea_x|x_size/.test(name)) {
+      if (!Number.isFinite(workspace.width)) {
+        workspace.width = firstValue;
+      }
+      return;
+    }
+
+    if (/bed_size_y|build_volume_y|work_size_y|workarea_y|y_size/.test(name)) {
+      if (!Number.isFinite(workspace.depth)) {
+        workspace.depth = firstValue;
+      }
+      return;
+    }
+
+    if (/bed_min_x|mesh_min_x|probe_min_x|work_min_x|x_min/.test(name)) {
+      if (!Number.isFinite(workspace.xMin)) {
+        workspace.xMin = firstValue;
+      }
+      return;
+    }
+
+    if (/bed_max_x|mesh_max_x|probe_max_x|work_max_x|x_max/.test(name)) {
+      if (!Number.isFinite(workspace.xMax)) {
+        workspace.xMax = firstValue;
+      }
+      return;
+    }
+
+    if (/bed_min_y|mesh_min_y|probe_min_y|work_min_y|y_min/.test(name)) {
+      if (!Number.isFinite(workspace.yMin)) {
+        workspace.yMin = firstValue;
+      }
+      return;
+    }
+
+    if (/bed_max_y|mesh_max_y|probe_max_y|work_max_y|y_max/.test(name)) {
+      if (!Number.isFinite(workspace.yMax)) {
+        workspace.yMax = firstValue;
+      }
+      return;
+    }
+
+    if (/bed_origin_x|origin_x|work_origin_x|x_origin/.test(name)) {
+      if (!Number.isFinite(workspace.originX)) {
+        workspace.originX = firstValue;
+      }
+      return;
+    }
+
+    if (/bed_origin_y|origin_y|work_origin_y|y_origin/.test(name)) {
+      if (!Number.isFinite(workspace.originY)) {
+        workspace.originY = firstValue;
+      }
+      return;
+    }
+
+    if (/bed_size|build_volume|work_size|bed_dimensions|print_area|build_area/.test(name) && values.length >= 2) {
+      if (!Number.isFinite(workspace.width)) {
+        workspace.width = values[0];
+      }
+      if (!Number.isFinite(workspace.depth)) {
+        workspace.depth = values[1];
+      }
+      if (values.length >= 4) {
+        if (!Number.isFinite(workspace.xMin)) workspace.xMin = values[0];
+        if (!Number.isFinite(workspace.xMax)) workspace.xMax = values[1];
+        if (!Number.isFinite(workspace.yMin)) workspace.yMin = values[2];
+        if (!Number.isFinite(workspace.yMax)) workspace.yMax = values[3];
+      }
+      return;
+    }
+
+    if (/bed_limits|work_limits|mesh_limits|probe_area|work_area|bed_area|probe_limits/.test(name) && values.length >= 4) {
+      workspace.xMin = Number.isFinite(workspace.xMin) ? workspace.xMin : values[0];
+      workspace.xMax = Number.isFinite(workspace.xMax) ? workspace.xMax : values[1];
+      workspace.yMin = Number.isFinite(workspace.yMin) ? workspace.yMin : values[2];
+      workspace.yMax = Number.isFinite(workspace.yMax) ? workspace.yMax : values[3];
+      return;
+    }
+
+    if (/x_range|probe_x_range|mesh_x_range/.test(name) && values.length >= 2) {
+      if (!Number.isFinite(workspace.xMin)) workspace.xMin = values[0];
+      if (!Number.isFinite(workspace.xMax)) workspace.xMax = values[1];
+      return;
+    }
+
+    if (/y_range|probe_y_range|mesh_y_range/.test(name) && values.length >= 2) {
+      if (!Number.isFinite(workspace.yMin)) workspace.yMin = values[0];
+      if (!Number.isFinite(workspace.yMax)) workspace.yMax = values[1];
+    }
+  });
+
+  if (!Number.isFinite(workspace.xMin) && Number.isFinite(workspace.originX)) {
+    workspace.xMin = workspace.originX;
+  }
+
+  if (!Number.isFinite(workspace.yMin) && Number.isFinite(workspace.originY)) {
+    workspace.yMin = workspace.originY;
+  }
+
+  if (!Number.isFinite(workspace.xMax) && Number.isFinite(workspace.xMin) && Number.isFinite(workspace.width)) {
+    workspace.xMax = workspace.xMin + workspace.width;
+  }
+
+  if (!Number.isFinite(workspace.xMin) && Number.isFinite(workspace.xMax) && Number.isFinite(workspace.width)) {
+    workspace.xMin = workspace.xMax - workspace.width;
+  }
+
+  if (!Number.isFinite(workspace.yMax) && Number.isFinite(workspace.yMin) && Number.isFinite(workspace.depth)) {
+    workspace.yMax = workspace.yMin + workspace.depth;
+  }
+
+  if (!Number.isFinite(workspace.yMin) && Number.isFinite(workspace.yMax) && Number.isFinite(workspace.depth)) {
+    workspace.yMin = workspace.yMax - workspace.depth;
+  }
+
+  if (Number.isFinite(workspace.xMin) && Number.isFinite(workspace.xMax) && workspace.xMin > workspace.xMax) {
+    const temp = workspace.xMin;
+    workspace.xMin = workspace.xMax;
+    workspace.xMax = temp;
+  }
+
+  if (Number.isFinite(workspace.yMin) && Number.isFinite(workspace.yMax) && workspace.yMin > workspace.yMax) {
+    const temp = workspace.yMin;
+    workspace.yMin = workspace.yMax;
+    workspace.yMax = temp;
+  }
+
+  if (!Number.isFinite(workspace.width) && Number.isFinite(workspace.xMin) && Number.isFinite(workspace.xMax)) {
+    workspace.width = workspace.xMax - workspace.xMin;
+  }
+
+  if (!Number.isFinite(workspace.depth) && Number.isFinite(workspace.yMin) && Number.isFinite(workspace.yMax)) {
+    workspace.depth = workspace.yMax - workspace.yMin;
+  }
+
+  if (Number.isFinite(workspace.width) && workspace.width < 0) {
+    workspace.width = Math.abs(workspace.width);
+  }
+
+  if (Number.isFinite(workspace.depth) && workspace.depth < 0) {
+    workspace.depth = Math.abs(workspace.depth);
+  }
+
+  const hasXRange = Number.isFinite(workspace.xMin) && Number.isFinite(workspace.xMax);
+  const hasYRange = Number.isFinite(workspace.yMin) && Number.isFinite(workspace.yMax);
+
+  if (!hasXRange && !hasYRange) {
+    return null;
+  }
+
+  return workspace;
+}
+
 const router = express.Router();
 
 // Page d'accueil - redirige vers login ou dashboard
@@ -287,6 +515,65 @@ router.get('/api/machines', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Erreur récupération machines:', error);
     res.status(500).json({ error: 'Erreur lors de la récupération' });
+  }
+});
+
+router.get('/api/machines/:uuid/workspace', requireAuth, async (req, res) => {
+  const { uuid } = req.params;
+  const userId = req.session.user.id;
+
+  let connection;
+  try {
+    const machines = await executeQuery(
+      'SELECT id FROM machines WHERE uuid = ? AND user_id = ?',
+      [uuid, userId]
+    );
+
+    if (machines.length === 0) {
+      return res.status(404).json({ error: 'Machine non trouvée' });
+    }
+
+    const machineId = machines[0].id;
+    connection = await getConnection();
+
+    const [batches] = await connection.execute(
+      `SELECT batch_id
+         FROM machine_info_values
+        WHERE machine_id = ?
+        ORDER BY captured_at DESC
+        LIMIT 1`,
+      [machineId]
+    );
+
+    if (batches.length === 0) {
+      return res.json({ workspace: null });
+    }
+
+    const batchId = batches[0].batch_id;
+
+    const [rows] = await connection.execute(
+      `SELECT
+         p.parameter_name,
+         p.normalized_value,
+         p.data_type,
+         v.raw_value
+       FROM machine_info_parameters p
+       JOIN machine_info_values v ON v.id = p.info_value_id
+       WHERE v.machine_id = ? AND v.batch_id = ?
+       ORDER BY v.command_index ASC, v.position ASC, p.parameter_name ASC`,
+      [machineId, batchId]
+    );
+
+    const workspace = computeWorkspaceFromParameters(rows);
+    return res.json({ workspace });
+  } catch (error) {
+    console.error('Erreur lors de la récupération de la zone de travail de la machine:', error);
+    await logError('machine_workspace_fetch_failed', error.message, req, { uuid });
+    return res.status(500).json({ error: 'Erreur lors de la récupération de la zone de travail de la machine' });
+  } finally {
+    if (connection) {
+      connection.release();
+    }
   }
 });
 
