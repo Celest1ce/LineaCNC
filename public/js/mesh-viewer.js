@@ -1,4 +1,173 @@
 /**
+ * Gestionnaire de cache pour les zones de travail des machines.
+ */
+class MachineWorkspaceCache {
+    constructor() {
+        this.cache = new Map();
+        this.pending = new Map();
+    }
+
+    static parseNumber(value) {
+        if (value === null || value === undefined) {
+            return null;
+        }
+
+        if (typeof value === 'number') {
+            return Number.isFinite(value) ? value : null;
+        }
+
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return null;
+            }
+
+            const normalized = trimmed.replace(/,/g, '.');
+            const match = normalized.match(/-?\d+(?:\.\d+)?/);
+            if (!match) {
+                return null;
+            }
+
+            const parsed = parseFloat(match[0]);
+            return Number.isNaN(parsed) ? null : parsed;
+        }
+
+        return null;
+    }
+
+    static sanitizeWorkspace(workspace) {
+        if (!workspace || typeof workspace !== 'object') {
+            return null;
+        }
+
+        const sanitized = {
+            xMin: MachineWorkspaceCache.parseNumber(workspace.xMin ?? workspace.minX ?? workspace.x_min ?? workspace.xmin),
+            xMax: MachineWorkspaceCache.parseNumber(workspace.xMax ?? workspace.maxX ?? workspace.x_max ?? workspace.xmax),
+            yMin: MachineWorkspaceCache.parseNumber(workspace.yMin ?? workspace.minY ?? workspace.y_min ?? workspace.ymin),
+            yMax: MachineWorkspaceCache.parseNumber(workspace.yMax ?? workspace.maxY ?? workspace.y_max ?? workspace.ymax),
+            width: MachineWorkspaceCache.parseNumber(workspace.width ?? workspace.sizeX ?? workspace.widthX ?? workspace.xSize),
+            depth: MachineWorkspaceCache.parseNumber(workspace.depth ?? workspace.sizeY ?? workspace.ySize ?? workspace.length ?? workspace.size),
+            originX: MachineWorkspaceCache.parseNumber(workspace.originX ?? workspace.xOrigin ?? workspace.origin_x ?? workspace.x0 ?? workspace.startX),
+            originY: MachineWorkspaceCache.parseNumber(workspace.originY ?? workspace.yOrigin ?? workspace.origin_y ?? workspace.y0 ?? workspace.startY)
+        };
+
+        if (sanitized.xMin === null && sanitized.originX !== null) {
+            sanitized.xMin = sanitized.originX;
+        }
+        if (sanitized.yMin === null && sanitized.originY !== null) {
+            sanitized.yMin = sanitized.originY;
+        }
+
+        if (sanitized.width === null && sanitized.xMin !== null && sanitized.xMax !== null) {
+            sanitized.width = sanitized.xMax - sanitized.xMin;
+        }
+        if (sanitized.depth === null && sanitized.yMin !== null && sanitized.yMax !== null) {
+            sanitized.depth = sanitized.yMax - sanitized.yMin;
+        }
+
+        if (sanitized.width !== null && sanitized.width < 0) {
+            sanitized.width = Math.abs(sanitized.width);
+        }
+        if (sanitized.depth !== null && sanitized.depth < 0) {
+            sanitized.depth = Math.abs(sanitized.depth);
+        }
+
+        if (sanitized.xMax === null && sanitized.xMin !== null && sanitized.width !== null) {
+            sanitized.xMax = sanitized.xMin + sanitized.width;
+        }
+        if (sanitized.xMin === null && sanitized.xMax !== null && sanitized.width !== null) {
+            sanitized.xMin = sanitized.xMax - sanitized.width;
+        }
+        if (sanitized.yMax === null && sanitized.yMin !== null && sanitized.depth !== null) {
+            sanitized.yMax = sanitized.yMin + sanitized.depth;
+        }
+        if (sanitized.yMin === null && sanitized.yMax !== null && sanitized.depth !== null) {
+            sanitized.yMin = sanitized.yMax - sanitized.depth;
+        }
+
+        if (sanitized.xMin !== null && sanitized.xMax !== null && sanitized.xMin > sanitized.xMax) {
+            const tmp = sanitized.xMin;
+            sanitized.xMin = sanitized.xMax;
+            sanitized.xMax = tmp;
+        }
+        if (sanitized.yMin !== null && sanitized.yMax !== null && sanitized.yMin > sanitized.yMax) {
+            const tmp = sanitized.yMin;
+            sanitized.yMin = sanitized.yMax;
+            sanitized.yMax = tmp;
+        }
+
+        if (sanitized.width === null && sanitized.xMin !== null && sanitized.xMax !== null) {
+            sanitized.width = sanitized.xMax - sanitized.xMin;
+        }
+        if (sanitized.depth === null && sanitized.yMin !== null && sanitized.yMax !== null) {
+            sanitized.depth = sanitized.yMax - sanitized.yMin;
+        }
+
+        const hasXRange = Number.isFinite(sanitized.xMin) && Number.isFinite(sanitized.xMax);
+        const hasYRange = Number.isFinite(sanitized.yMin) && Number.isFinite(sanitized.yMax);
+
+        if (!hasXRange && !hasYRange) {
+            return null;
+        }
+
+        return sanitized;
+    }
+
+    async getWorkspace(uuid) {
+        if (!uuid) {
+            return null;
+        }
+
+        if (this.cache.has(uuid)) {
+            return this.cache.get(uuid);
+        }
+
+        if (this.pending.has(uuid)) {
+            return this.pending.get(uuid);
+        }
+
+        const promise = this.fetchWorkspace(uuid)
+            .catch((error) => {
+                console.error('Erreur lors de la récupération de la zone de travail:', error);
+                return null;
+            })
+            .finally(() => {
+                this.pending.delete(uuid);
+            });
+
+        this.pending.set(uuid, promise);
+        const workspace = await promise;
+        this.cache.set(uuid, workspace);
+        return workspace;
+    }
+
+    async fetchWorkspace(uuid) {
+        try {
+            const response = await fetch(`/api/machines/${encodeURIComponent(uuid)}/workspace`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                }
+            });
+
+            if (response.status === 404) {
+                return null;
+            }
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const payload = await response.json();
+            return MachineWorkspaceCache.sanitizeWorkspace(payload?.workspace ?? null);
+        } catch (error) {
+            throw error;
+        }
+    }
+}
+
+/**
  * Gestionnaire du Mesh Viewer
  */
 
@@ -29,12 +198,17 @@ class MeshViewer {
         this.mesh3DSmoothingLevel = 2; // Niveau de lissage par défaut (5 niveaux disponibles)
         this.mesh3DZScale = 1.0; // Amplitude Z par défaut
         this.lastMeshMachineId = null; // Dernière machine utilisée pour le mesh affiché
+        this.lastMeshMachineUuid = null; // UUID de la machine utilisée pour le dernier mesh
         this.pointRefreshState = null; // État du rafraîchissement d'un point individuel
         this.meshDataVersion = 0;
         this.mesh3DRenderCache = null;
         this.pendingRender3D = false;
         this.animationId = null;
         this.is3DInteracting = false;
+
+        this.machineWorkspaceCache = new MachineWorkspaceCache();
+        this.machineWorkspaces = new Map();
+        this.lastMeshMachineWorkspace = null;
 
         this.loadMesh3DPreferences();
         this.init();
@@ -349,47 +523,63 @@ class MeshViewer {
             const anchor = document.getElementById('gradientType') || document.getElementById('heatmapLegend') || document.getElementById('meshContainer');
             if (!anchor || !anchor.parentElement) return;
 
-            const block = document.createElement('div');
-            block.id = 'autoCorrectionBlock';
-            block.className = 'mt-4 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700';
+        const block = document.createElement('div');
+        block.id = 'autoCorrectionBlock';
+        block.className = 'mt-6 rounded-xl border border-gray-200 bg-white/90 p-4 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-800/90';
+        block.innerHTML = `
+            <div class="flex items-start gap-3">
+                <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 text-white shadow dark:from-blue-400 dark:to-indigo-500">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </div>
+                <div class="flex-1 space-y-3">
+                    <div class="flex items-center justify-between gap-2">
+                        <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">Correction des valeurs manquantes</p>
+                        <span class="machine-status-badge bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
+                            <span class="machine-status-dot bg-blue-500/70"></span>
+                            Intelligent
+                        </span>
+                    </div>
+                    <p class="text-xs leading-relaxed text-gray-600 dark:text-gray-300">L&rsquo;algorithme ajuste un plan virtuel à partir des points valides afin de combler uniquement les cases vides sans altérer vos mesures existantes.</p>
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <button
+                            id="applyAutoCorrection"
+                            type="button"
+                            class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-400 sm:w-auto"
+                        >
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                            </svg>
+                            Corriger les valeurs
+                        </button>
+                        <div id="autoCorrectionInfo" class="hidden text-xs text-gray-500 dark:text-gray-400 sm:flex-1"></div>
+                    </div>
+                </div>
+            </div>
+        `;
 
-            const title = document.createElement('div');
-            title.className = 'text-sm font-semibold text-gray-800 dark:text-gray-100 mb-2';
-            title.textContent = 'Correction automatique des données manquantes';
-
-            const desc = document.createElement('div');
-            desc.className = 'text-xs text-gray-600 dark:text-gray-300 mb-3';
-            desc.textContent = "Ajuste un plan à partir des points existants (plateau plan) et ne remplit que les cases manquantes. Les valeurs existantes ne sont pas modifiées.";
-
-            const btn = document.createElement('button');
-            btn.id = 'applyAutoCorrection';
-            btn.className = 'w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed';
-            btn.textContent = 'Corriger les données manquantes';
-
-            const info = document.createElement('div');
-            info.id = 'autoCorrectionInfo';
-            info.className = 'mt-2 text-xs text-gray-500 dark:text-gray-400 hidden';
-            info.textContent = '';
-
+        const btn = block.querySelector('#applyAutoCorrection');
+        if (btn) {
             btn.addEventListener('click', () => this.autoFillMissingWithPlane());
-
-            block.appendChild(title);
-            block.appendChild(desc);
-            block.appendChild(btn);
-            block.appendChild(info);
-
-            // Insérer juste après l'élément d'ancrage
-            if (anchor.nextSibling) {
-                anchor.parentElement.insertBefore(block, anchor.nextSibling);
-            } else {
-                anchor.parentElement.appendChild(block);
-            }
-
-            this.updateAutoCorrectionAvailability();
-        } catch (e) {
-            // Silencieux si l'UI n'existe pas sur cette page
         }
+
+        const info = block.querySelector('#autoCorrectionInfo');
+        if (info) {
+            info.dataset.messageType = 'info';
+        }
+
+        if (anchor.nextSibling) {
+            anchor.parentElement.insertBefore(block, anchor.nextSibling);
+        } else {
+            anchor.parentElement.appendChild(block);
+        }
+
+        this.updateAutoCorrectionAvailability();
+    } catch (e) {
+        // Silencieux si l'UI n'existe pas sur cette page
     }
+}
 
     /**
      * Remplit uniquement les valeurs manquantes par ajustement plan (moindres carrés)
@@ -533,168 +723,200 @@ class MeshViewer {
         if (!text || text.trim() === '') {
             return null;
         }
-        
-        const lines = text.trim().split('\n');
+
+        const sanitized = text.replace(/\r/g, '\n');
+        const lines = sanitized.trim().split('\n');
         const dataLines = [];
-        
-        // Trouver les lignes de données (celles qui contiennent des valeurs numériques avec + ou -)
+        const coordinateLines = [];
+        const columnHeaderCandidates = [];
+
         for (let i = 0; i < lines.length; i++) {
-            let line = lines[i].trim();
-            
-            // Ignorer les lignes vides
-            if (line === '') {
+            const rawLine = typeof lines[i] === 'string' ? lines[i] : '';
+            let line = rawLine.trim();
+
+            if (!line) {
                 continue;
             }
-            
-            // Ignorer les lignes d'en-tête comme "Bed Topography Report:"
-            if (line.toLowerCase().includes('bed topography') || line.toLowerCase().includes('report')) {
+
+            const lowerLine = line.toLowerCase();
+
+            if (lowerLine.includes('bed topography') || lowerLine.includes('report')) {
                 continue;
             }
-            
-            // Ignorer les lignes de coordonnées (1,299) etc.
-            if (line.match(/^\([^)]*\)\s*\([^)]*\)$/) || line.match(/^\([^)]*\)$/)) {
+
+            const coordinateMatches = [...line.matchAll(/\(\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*\)/g)];
+            if (coordinateMatches.length > 0 && !line.includes('|')) {
+                const parsedPairs = coordinateMatches
+                    .map((match) => {
+                        const x = parseFloat(match[1]);
+                        const y = parseFloat(match[2]);
+                        return {
+                            x: Number.isNaN(x) ? null : x,
+                            y: Number.isNaN(y) ? null : y
+                        };
+                    })
+                    .filter((pair) => pair.x !== null || pair.y !== null);
+
+                if (parsedPairs.length > 0) {
+                    coordinateLines.push(parsedPairs);
+                }
                 continue;
             }
-            
-            // Ignorer les lignes "ok" ou autres messages de confirmation
-            if (line.toLowerCase() === 'ok' || line.startsWith('>')) {
+
+            if (lowerLine === 'ok' || line.startsWith('>')) {
                 continue;
             }
-            
-            // Ignorer les lignes de séparateurs ou de numéros de colonnes uniquement (sans pipe)
-            if (line.match(/^[0-9\s]+$/) && !line.includes('|')) {
-                continue;
+
+            if (!line.includes('|')) {
+                const numericTokens = line.match(/[+-]?\d+(?:\.\d+)?/g);
+                if (numericTokens && numericTokens.length >= 2) {
+                    const parsedNumbers = numericTokens
+                        .map((token) => {
+                            const parsed = parseFloat(token);
+                            return Number.isNaN(parsed) ? null : parsed;
+                        })
+                        .filter((value) => value !== null);
+
+                    if (parsedNumbers.length >= 2) {
+                        columnHeaderCandidates.push(parsedNumbers);
+                        continue;
+                    }
+                }
             }
-            
-            // Ignorer les lignes avec uniquement "|"
+
             if (line === '|') {
                 continue;
             }
-            
-            // Ligne de données : format "Y | value1 value2 ..." ou "Y | +0.188 +0.157 ..."
-            // Peut aussi être une ligne de header avec des numéros de colonnes mêlés
+
             if (line.includes('|')) {
                 const parts = line.split('|');
                 if (parts.length >= 2) {
-                    const rowIndexMatch = parts[0].match(/(\d+)\s*$/);
-                    if (!rowIndexMatch) {
+                    const rowLabel = parts[0];
+                    const rowNumberMatch = rowLabel.match(/([+-]?\d+(?:\.\d+)?)(?!.*[+-]?\d)/);
+                    if (!rowNumberMatch) {
                         continue;
                     }
 
-                    const rowIndex = parseInt(rowIndexMatch[1], 10);
+                    const parsedRowPosition = parseFloat(rowNumberMatch[1]);
+                    const rowPosition = Number.isNaN(parsedRowPosition) ? null : parsedRowPosition;
+                    const sortKeyCandidate = Number.isFinite(rowPosition)
+                        ? rowPosition
+                        : parseInt(rowNumberMatch[1], 10);
+                    const rowSortKey = Number.isNaN(sortKeyCandidate) ? null : sortKeyCandidate;
+                    const originalIndex = dataLines.length;
 
-                    // Extraire la partie après le pipe (enlever le | final si présent)
                     let valuesStr = parts.slice(1).join('|').trim();
-                    // Enlever le pipe final si présent
                     valuesStr = valuesStr.replace(/\|\s*$/, '').trim();
-                    
-                    // Extraire les valeurs (format: +0.188 ou [+0.143] ou +0.188 ou -0.015 ou 0.000 ou +0084 ou +0200 ou . pour manquant)
-                    // Gérer aussi les cas où il n'y a pas de signe + ou - au début
-                    // Normaliser les espaces multiples en un seul espace d'abord
+
                     const normalizedStr = valuesStr.replace(/\s+/g, ' ');
-                    
-                    // Parser les valeurs : chercher soit des nombres, soit des points
                     const values = [];
-                    // Pattern pour trouver : un nombre (avec ou sans signe) OU un point (avec ou sans crochets)
-                    const valuePattern = /(\[?\s*\.\s*\]?|[+-]?\d+\.?\d*)/g;
+                    const valuePattern = /(\[\s*\.?\s*\]|[+-]?\d+\.?\d*|\.)/g;
                     let match;
-                    
+
                     while ((match = valuePattern.exec(normalizedStr)) !== null) {
-                        let v = match[1].trim();
-                        
-                        // Détecter les points (.) qui indiquent une valeur manquante
-                        if (v === '.' || v === '[.]' || v === '[ .' || v.match(/^\[?\s*\.\s*\]?$/)) {
-                            values.push(null); // null pour valeur manquante
+                        let token = match[1].trim();
+
+                        if (token === '.' || token === '[.]' || token === '[ .]' || /^\[\s*\.\s*\]$/.test(token)) {
+                            values.push(null);
                             continue;
                         }
-                        
-                        // Enlever les crochets si présents
-                        v = v.replace(/[\[\]]/g, '').trim();
-                        
-                        // Vérifier à nouveau après avoir enlevé les crochets
-                        if (v === '.' || v === '') {
-                            values.push(null); // null pour valeur manquante
+
+                        token = token.replace(/[\[\]]/g, '').trim();
+
+                        if (token === '.' || token === '') {
+                            values.push(null);
                             continue;
                         }
-                        
-                        // Extraire le nombre avec gestion des cas spéciaux
-                        let numMatch = v.match(/^([+-]?)(\d+)(\.\d+)?/);
+
+                        let numMatch = token.match(/^([+-]?)(\d+)(\.\d+)?/);
                         if (!numMatch) {
-                            // Essayer de trouver n'importe quel nombre
-                            numMatch = v.match(/([+-]?\d+\.?\d*)/);
+                            numMatch = token.match(/([+-]?\d+\.?\d*)/);
                         }
-                        
+
                         if (numMatch) {
                             let numStr = numMatch[0];
-                            // Corriger les formats comme +0084 en 0.084 ou +0200 en 0.200
-                            if (/^[+-]?\d{4,}$/.test(numStr)) {
-                                // C'est un nombre sans point décimal, probablement mal formaté
-                                // Par exemple +0084 devrait être +0.084
+
+                            if (/^[+-]?\d{4,}$/.test(numStr) && !numStr.includes('.')) {
                                 const sign = numStr.startsWith('-') ? '-' : (numStr.startsWith('+') ? '+' : '');
                                 const digits = numStr.replace(/^[+-]/, '');
                                 if (digits.length >= 3) {
-                                    // Prendre les 3 premiers chiffres comme la partie entière et décimale
                                     numStr = `${sign}${digits.slice(0, 1)}.${digits.slice(1, 3)}`;
                                 }
                             }
-                            
-                            const num = parseFloat(numStr);
-                            values.push(isNaN(num) ? null : num);
+
+                            const parsedValue = parseFloat(numStr);
+                            values.push(Number.isNaN(parsedValue) ? null : parsedValue);
                         } else {
                             values.push(null);
                         }
                     }
-                    
-                    // On garde la ligne même si certaines valeurs sont null (manquantes)
-                    // Cela permet de préserver la structure de la grille
-                    // On vérifie qu'on a au moins une valeur ou des nulls (structure présente)
+
                     if (values.length > 0) {
-                        dataLines.push({ row: rowIndex, values });
+                        dataLines.push({
+                            rowPosition,
+                            rowSortKey,
+                            originalIndex,
+                            values
+                        });
                     }
                 }
             }
         }
-        
+
         if (dataLines.length === 0) {
             return null;
         }
-        
-        // Trier par index de ligne (décroissant - la ligne 9 en haut, ligne 0 en bas)
-        dataLines.sort((a, b) => b.row - a.row);
-        
-        // Déterminer la taille de la matrice (utiliser le nombre maximum de colonnes)
+
+        dataLines.sort((a, b) => {
+            const aKey = Number.isFinite(a.rowSortKey) ? a.rowSortKey : null;
+            const bKey = Number.isFinite(b.rowSortKey) ? b.rowSortKey : null;
+
+            if (aKey !== null && bKey !== null) {
+                if (aKey === bKey) {
+                    return a.originalIndex - b.originalIndex;
+                }
+                return bKey - aKey;
+            }
+
+            if (aKey !== null) {
+                return -1;
+            }
+
+            if (bKey !== null) {
+                return 1;
+            }
+
+            return a.originalIndex - b.originalIndex;
+        });
+
         const numRows = dataLines.length;
-        
-        // Compter les colonnes : utiliser le nombre le plus fréquent pour éviter les erreurs
-        const colCounts = dataLines.map(line => line.values.length);
-        // Si on a plusieurs tailles différentes, prendre la plus fréquente
+
+        const colCounts = dataLines.map((line) => line.values.length);
         const colCountMap = {};
-        colCounts.forEach(count => {
+        colCounts.forEach((count) => {
             colCountMap[count] = (colCountMap[count] || 0) + 1;
         });
-        
-        // Trouver la taille la plus fréquente
+
         let numCols = Math.max(...colCounts);
         let maxFreq = 0;
         for (const [count, freq] of Object.entries(colCountMap)) {
             if (freq > maxFreq) {
                 maxFreq = freq;
-                numCols = parseInt(count);
+                numCols = parseInt(count, 10);
             }
         }
-        
+
         console.log('Détection de la taille:', {
             rows: numRows,
             cols: numCols,
-            colCounts: colCounts,
-            colCountMap: colCountMap
+            colCounts,
+            colCountMap
         });
-        
-        // Créer la matrice et compter les valeurs manquantes
+
         const matrix = [];
         let missingCount = 0;
         let totalValues = 0;
-        
+
         for (let i = 0; i < numRows; i++) {
             matrix.push([]);
             const rowData = dataLines[i];
@@ -703,21 +925,155 @@ class MeshViewer {
                     matrix[i].push(rowData.values[j]);
                     totalValues++;
                 } else {
-                    matrix[i].push(null); // null pour les valeurs manquantes
+                    matrix[i].push(null);
                     missingCount++;
                 }
             }
         }
-        
+
+        const xSamples = [];
+        const ySamples = [];
+        coordinateLines.forEach((pairs) => {
+            pairs.forEach((pair) => {
+                if (pair.x !== null) {
+                    xSamples.push(pair.x);
+                }
+                if (pair.y !== null) {
+                    ySamples.push(pair.y);
+                }
+            });
+        });
+
+        const xRange = xSamples.length > 0
+            ? { min: Math.min(...xSamples), max: Math.max(...xSamples) }
+            : null;
+        const yRange = ySamples.length > 0
+            ? { min: Math.min(...ySamples), max: Math.max(...ySamples) }
+            : null;
+
+        let xCoordinates = null;
+        if (coordinateLines.length > 0) {
+            const bestPairs = coordinateLines.reduce((best, pairs) => {
+                const bestValid = Array.isArray(best)
+                    ? best.filter((pair) => pair.x !== null).length
+                    : 0;
+                const currentValid = pairs.filter((pair) => pair.x !== null).length;
+                return currentValid > bestValid ? pairs : best;
+            }, null);
+
+            if (bestPairs && Array.isArray(bestPairs)) {
+                const sortedPairs = bestPairs
+                    .filter((pair) => pair.x !== null)
+                    .sort((a, b) => a.x - b.x);
+                if (sortedPairs.length >= numCols) {
+                    xCoordinates = sortedPairs.slice(0, numCols).map((pair) => pair.x);
+                } else if (sortedPairs.length === numCols) {
+                    xCoordinates = sortedPairs.map((pair) => pair.x);
+                }
+            }
+        }
+
+        if ((!xCoordinates || xCoordinates.length !== numCols) && columnHeaderCandidates.length > 0) {
+            const bestCandidate = columnHeaderCandidates.reduce((best, candidate) => (
+                candidate.length > (Array.isArray(best) ? best.length : 0) ? candidate : best
+            ), null);
+
+            if (bestCandidate && bestCandidate.length >= numCols) {
+                xCoordinates = bestCandidate.slice(0, numCols);
+            }
+        }
+
+        if ((!xCoordinates || xCoordinates.length !== numCols) && xRange && Number.isFinite(xRange.min) && Number.isFinite(xRange.max)) {
+            xCoordinates = [];
+            if (numCols <= 1 || xRange.max === xRange.min) {
+                for (let col = 0; col < numCols; col++) {
+                    xCoordinates.push(xRange.min);
+                }
+            } else {
+                const step = (xRange.max - xRange.min) / (numCols - 1);
+                for (let col = 0; col < numCols; col++) {
+                    xCoordinates.push(xRange.min + (step * col));
+                }
+            }
+        }
+
+        if (Array.isArray(xCoordinates)) {
+            xCoordinates = xCoordinates.map((value) => {
+                if (Number.isFinite(value)) {
+                    return value;
+                }
+                if (typeof value === 'string') {
+                    const parsed = parseFloat(value);
+                    return Number.isNaN(parsed) ? null : parsed;
+                }
+                return null;
+            });
+
+            if (xCoordinates.some((value) => !Number.isFinite(value))) {
+                xCoordinates = null;
+            }
+        }
+
+        let yCoordinates = dataLines.map((line) => {
+            if (Number.isFinite(line.rowPosition)) {
+                return line.rowPosition;
+            }
+            if (typeof line.rowPosition === 'string') {
+                const parsed = parseFloat(line.rowPosition);
+                if (!Number.isNaN(parsed)) {
+                    return parsed;
+                }
+            }
+            return null;
+        });
+
+        const yNeedsInterpolation = yCoordinates.every((value) => value === null);
+        if ((yNeedsInterpolation || yCoordinates.some((value) => value === null)) && yRange && Number.isFinite(yRange.min) && Number.isFinite(yRange.max)) {
+            const max = yRange.max;
+            const min = yRange.min;
+            if (numRows <= 1 || max === min) {
+                yCoordinates = new Array(numRows).fill(max);
+            } else {
+                const step = (max - min) / (numRows - 1);
+                yCoordinates = yCoordinates.map((value, index) => {
+                    if (Number.isFinite(value)) {
+                        return value;
+                    }
+                    return max - (step * index);
+                });
+            }
+        }
+
+        if (Array.isArray(yCoordinates)) {
+            yCoordinates = yCoordinates.map((value) => {
+                if (Number.isFinite(value)) {
+                    return value;
+                }
+                if (typeof value === 'string') {
+                    const parsed = parseFloat(value);
+                    return Number.isNaN(parsed) ? null : parsed;
+                }
+                return null;
+            });
+
+            if (yCoordinates.every((value) => value === null)) {
+                yCoordinates = null;
+            }
+        }
+
         return {
             matrix,
             rows: numRows,
             cols: numCols,
             missingCount,
-            totalValues
+            totalValues,
+            xCoordinates: Array.isArray(xCoordinates) ? xCoordinates : null,
+            yCoordinates: Array.isArray(yCoordinates) ? yCoordinates : null,
+            xRange,
+            yRange
         };
     }
-    
+
     /**
      * Détecte les informations du mesh dans le textarea
      */
@@ -1021,7 +1377,85 @@ class MeshViewer {
         if (legendMin) legendMin.textContent = min.toFixed(3);
         if (legendMax) legendMax.textContent = max.toFixed(3);
     }
-    
+
+    async ensureMachineWorkspace(machineUuid) {
+        if (!machineUuid) {
+            return null;
+        }
+
+        if (this.machineWorkspaces.has(machineUuid)) {
+            return this.machineWorkspaces.get(machineUuid);
+        }
+
+        try {
+            const workspace = await this.machineWorkspaceCache.getWorkspace(machineUuid);
+            if (workspace) {
+                this.machineWorkspaces.set(machineUuid, workspace);
+                return workspace;
+            }
+        } catch (error) {
+            console.error('Impossible de récupérer la zone de travail de la machine:', error);
+        }
+
+        return null;
+    }
+
+    applyWorkspaceToMesh(meshData, workspace) {
+        if (!meshData || typeof meshData !== 'object') {
+            return;
+        }
+
+        const sanitized = MachineWorkspaceCache.sanitizeWorkspace(workspace);
+        if (!sanitized) {
+            return;
+        }
+
+        meshData.machineWorkspace = sanitized;
+        this.lastMeshMachineWorkspace = sanitized;
+
+        const hasXRange = Number.isFinite(sanitized.xMin) && Number.isFinite(sanitized.xMax);
+        const hasYRange = Number.isFinite(sanitized.yMin) && Number.isFinite(sanitized.yMax);
+
+        if (hasXRange) {
+            meshData.xRange = { min: sanitized.xMin, max: sanitized.xMax };
+            if (!Array.isArray(meshData.xCoordinates) || meshData.xCoordinates.length !== meshData.cols) {
+                const positions = this.generateAxisPositions(sanitized.xMin, sanitized.xMax, meshData.cols);
+                if (positions) {
+                    meshData.xCoordinates = positions;
+                }
+            }
+        }
+
+        if (hasYRange) {
+            meshData.yRange = { min: sanitized.yMin, max: sanitized.yMax };
+            if (!Array.isArray(meshData.yCoordinates) || meshData.yCoordinates.length !== meshData.rows) {
+                const positions = this.generateAxisPositions(sanitized.yMax, sanitized.yMin, meshData.rows);
+                if (positions) {
+                    meshData.yCoordinates = positions;
+                }
+            }
+        }
+    }
+
+    generateAxisPositions(start, end, count) {
+        if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isInteger(count) || count <= 0) {
+            return null;
+        }
+
+        if (count === 1) {
+            return [parseFloat(start.toFixed(3))];
+        }
+
+        const step = (end - start) / (count - 1);
+        const positions = [];
+
+        for (let index = 0; index < count; index += 1) {
+            const value = start + (step * index);
+            positions.push(parseFloat(value.toFixed(3)));
+        }
+        return positions;
+    }
+
     createCellRefreshButton() {
         const button = document.createElement('button');
         button.type = 'button';
@@ -1045,6 +1479,7 @@ class MeshViewer {
             }
         }
 
+        const coordinateLabel = cell.getAttribute('data-coordinates-label');
         const hasStats = stats && Number.isFinite(stats.min) && Number.isFinite(stats.max);
         const min = hasStats ? stats.min : (numericValue ?? 0);
         const max = hasStats ? stats.max : (numericValue ?? 0);
@@ -1057,12 +1492,17 @@ class MeshViewer {
             if (valueSpan) {
                 valueSpan.textContent = '-';
             }
+            if (coordinateLabel) {
+                cell.title = coordinateLabel;
+            } else {
+                cell.removeAttribute('title');
+            }
             cell.classList.remove('mesh-cell-refreshing');
             return;
         }
 
         const bgColor = this.getHeatmapColor(numericValue, min, max);
-        cell.dataset.value = numericValue;
+        cell.dataset.value = numericValue.toFixed(3);
         cell.style.backgroundColor = bgColor;
         const rgb = this.hexToRgb(bgColor);
         const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
@@ -1071,6 +1511,12 @@ class MeshViewer {
         if (valueSpan) {
             valueSpan.textContent = numericValue >= 0 ? `+${numericValue.toFixed(3)}` : numericValue.toFixed(3);
         }
+        const tooltipParts = [];
+        if (coordinateLabel) {
+            tooltipParts.push(coordinateLabel);
+        }
+        tooltipParts.push(`Z=${numericValue.toFixed(3)} mm`);
+        cell.title = tooltipParts.join(' • ');
         cell.classList.remove('mesh-cell-refreshing');
     }
 
@@ -1079,6 +1525,26 @@ class MeshViewer {
         cell.className = 'mesh-cell editable';
         cell.dataset.row = row;
         cell.dataset.col = col;
+
+        const coordinates = this.getMeshPointCoordinates(row, col);
+        if (coordinates) {
+            const { x, y } = coordinates;
+            const labelParts = [];
+
+            if (Number.isFinite(x)) {
+                cell.dataset.x = x.toFixed(3);
+                labelParts.push(`X=${x.toFixed(2)} mm`);
+            }
+
+            if (Number.isFinite(y)) {
+                cell.dataset.y = y.toFixed(3);
+                labelParts.push(`Y=${y.toFixed(2)} mm`);
+            }
+
+            if (labelParts.length > 0) {
+                cell.setAttribute('data-coordinates-label', labelParts.join(' • '));
+            }
+        }
 
         const refreshButton = this.createCellRefreshButton();
         const valueSpan = document.createElement('span');
@@ -1156,6 +1622,74 @@ class MeshViewer {
         }
     }
 
+    getMeshPointCoordinates(row, col) {
+        if (!this.meshData) {
+            return { x: null, y: null };
+        }
+
+        const { xCoordinates, yCoordinates } = this.meshData;
+        let x = Array.isArray(xCoordinates) ? xCoordinates[col] : null;
+        let y = Array.isArray(yCoordinates) ? yCoordinates[row] : null;
+
+        if (typeof x === 'string') {
+            const parsedX = parseFloat(x);
+            x = Number.isNaN(parsedX) ? null : parsedX;
+        }
+
+        if (typeof y === 'string') {
+            const parsedY = parseFloat(y);
+            y = Number.isNaN(parsedY) ? null : parsedY;
+        }
+
+        if (!Number.isFinite(x)) {
+            x = this.estimateCoordinateFromRange('x', col);
+        }
+
+        if (!Number.isFinite(y)) {
+            y = this.estimateCoordinateFromRange('y', row);
+        }
+
+        return {
+            x: Number.isFinite(x) ? x : null,
+            y: Number.isFinite(y) ? y : null
+        };
+    }
+
+    estimateCoordinateFromRange(axis, index) {
+        if (!this.meshData) {
+            return null;
+        }
+
+        const count = axis === 'x' ? this.meshData.cols : this.meshData.rows;
+        if (!Number.isInteger(index) || index < 0 || index >= count) {
+            return null;
+        }
+
+        const range = axis === 'x' ? this.meshData.xRange : this.meshData.yRange;
+        if (!range || !Number.isFinite(range.min) || !Number.isFinite(range.max)) {
+            return null;
+        }
+
+        if (count <= 1 || range.max === range.min) {
+            return range.min;
+        }
+
+        const step = (range.max - range.min) / (count - 1);
+        if (axis === 'x') {
+            return range.min + (step * index);
+        }
+
+        return range.max - (step * index);
+    }
+
+    buildPointProbeCommand(row, col, coordinates = null) {
+        const { x, y } = (coordinates || this.getMeshPointCoordinates(row, col)) || {};
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            return null;
+        }
+        return `G30 X${x.toFixed(3)} Y${y.toFixed(3)}`;
+    }
+
     async requestPointRefresh(row, col, cell, button) {
         if (!this.meshData || !Array.isArray(this.meshData.matrix)) {
             this.notify('Aucun mesh n\'est chargé.', 'error');
@@ -1165,6 +1699,10 @@ class MeshViewer {
         if (!this.lastMeshMachineId) {
             this.notify('Importez d\'abord un mesh depuis la machine pour rafraîchir un point.', 'error');
             return;
+        }
+
+        if (this.lastMeshMachineUuid && !this.machineWorkspaces.has(this.lastMeshMachineUuid)) {
+            await this.ensureMachineWorkspace(this.lastMeshMachineUuid);
         }
 
         if (this.pointRefreshState) {
@@ -1178,10 +1716,10 @@ class MeshViewer {
             return;
         }
 
-        const meshCommandInput = document.getElementById('meshCommand');
-        const meshCommand = meshCommandInput ? meshCommandInput.value.trim() : 'G29 T';
-        if (!meshCommand) {
-            this.notify('Veuillez définir la commande de récupération du mesh.', 'error');
+        const coordinates = this.getMeshPointCoordinates(row, col);
+        const pointCommand = this.buildPointProbeCommand(row, col, coordinates);
+        if (!pointCommand) {
+            this.notify('Impossible de déterminer les coordonnées de ce point pour lancer un palpage.', 'error');
             return;
         }
 
@@ -1197,7 +1735,10 @@ class MeshViewer {
             status: 'loading',
             cell,
             button,
-            originalContent
+            originalContent,
+            command: pointCommand,
+            machineId: this.lastMeshMachineId,
+            coordinates
         };
 
         try {
@@ -1264,12 +1805,12 @@ class MeshViewer {
             let writer = null;
             try {
                 writer = machine.port.writable.getWriter();
-                await writer.write(encoder.encode(`${meshCommand}\n`));
+                await writer.write(encoder.encode(`${pointCommand}\n`));
             } finally {
                 writer?.releaseLock();
             }
 
-            this.collectMachineData(`> ${meshCommand}\n`);
+            this.collectMachineData(`> ${pointCommand}\n`);
             if (this.pointRefreshState) {
                 this.pointRefreshState.status = 'awaiting-data';
             }
@@ -1962,9 +2503,19 @@ class MeshViewer {
         }
 
         this.meshData = meshData;
+
+        const importUuid = this.lastMeshMachineUuid;
+        if (importUuid) {
+            const workspace = this.machineWorkspaces.get(importUuid) || this.lastMeshMachineWorkspace;
+            if (workspace) {
+                this.applyWorkspaceToMesh(this.meshData, workspace);
+            }
+        }
+
         this.markMeshDataDirty();
-        this.renderMatrix(meshData);
+        this.renderMatrix(this.meshData);
         this.lastMeshMachineId = null;
+        this.lastMeshMachineUuid = null;
 
         // Fermer le modal après import réussi
         this.closeImportModal();
@@ -1981,17 +2532,39 @@ class MeshViewer {
     /**
      * Affiche le modal de sélection de machine
      */
-    async showMachineSelection() {
+    async showMachineSelection(preferredUuid = null) {
         const machineSelectModal = document.getElementById('machineSelectModal');
         const machineList = document.getElementById('machineList');
-        
+        const refreshButton = document.getElementById('refreshMachineList');
+
         if (!machineSelectModal || !machineList) return;
-        
+
+        const currentDropdown = document.getElementById('machineDropdown');
+        const lastSelection = preferredUuid || currentDropdown?.value || this.lastMeshMachineUuid || null;
+
         machineSelectModal.classList.remove('hidden');
-        machineList.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-sm">Chargement des machines...</p>';
-        
+        machineList.innerHTML = `
+            <div class="flex items-center gap-3 rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
+                <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>Chargement des machines...</span>
+            </div>
+        `;
+
+        if (refreshButton && refreshButton.dataset.bound !== 'true') {
+            refreshButton.addEventListener('click', () => {
+                const dropdown = document.getElementById('machineDropdown');
+                const current = dropdown ? dropdown.value : null;
+                refreshButton.classList.add('animate-pulse');
+                this.showMachineSelection(current || null).finally(() => {
+                    setTimeout(() => refreshButton.classList.remove('animate-pulse'), 300);
+                });
+            });
+            refreshButton.dataset.bound = 'true';
+        }
+
         try {
-            // Récupérer les machines depuis la BDD
             const response = await fetch('/api/machines', {
                 method: 'GET',
                 headers: {
@@ -1999,73 +2572,314 @@ class MeshViewer {
                     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
                 }
             });
-            
+
             if (!response.ok) {
                 throw new Error('Erreur lors de la récupération des machines');
             }
-            
+
             const machines = await response.json();
-            
-            if (machines.length === 0) {
-                machineList.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-sm">Aucune machine enregistrée. Veuillez ajouter une machine depuis le dashboard.</p>';
-                return;
-            }
-            
-            // Obtenir l'état des machines connectées si MachineManager est disponible
-            let connectedMachineIds = new Set();
-            if (typeof window.machineManager !== 'undefined') {
-                connectedMachineIds = new Set(
-                    Array.from(window.machineManager.machines.values())
-                        .filter(m => m.isConnected)
-                        .map(m => m.uuid)
-                );
-            }
-            
-            // Afficher la liste des machines
-            machineList.innerHTML = machines.map(machine => {
-                const isConnected = connectedMachineIds.has(machine.uuid);
-                return `
-                    <div class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 mb-2">
-                        <div class="flex-1">
-                            <div class="font-medium text-gray-900 dark:text-gray-100 flex items-center space-x-2">
-                                <span>${machine.name || 'Machine sans nom'}</span>
-                                ${isConnected ? '<span class="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded">Connectée</span>' : ''}
-                            </div>
-                            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                ${machine.baud_rate || 115200} baud${machine.last_port ? ` • ${machine.last_port}` : ''}
-                            </div>
-                        </div>
-                        <button 
-                            class="ml-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                            data-machine-uuid="${machine.uuid}"
-                            data-machine-name="${machine.name || 'Machine'}"
-                            data-machine-baud="${machine.baud_rate || 115200}"
-                            data-machine-port="${machine.last_port || ''}"
-                            ${isConnected ? '' : ''}
-                        >
-                            Connecter
-                        </button>
-                    </div>
-                `;
-            }).join('');
-            
-            // Ajouter les event listeners
-            machineList.querySelectorAll('button[data-machine-uuid]').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    const machineData = {
-                        uuid: btn.dataset.machineUuid,
-                        name: btn.dataset.machineName,
-                        baudRate: parseInt(btn.dataset.machineBaud),
-                        port: btn.dataset.machinePort
-                    };
-                    await this.connectAndImportFromMachine(machineData, e);
-                });
-            });
-            
+            const connectedMachineIds = this.getConnectedMachineUuidSet();
+
+            this.renderMachineSelection(machines, connectedMachineIds, lastSelection);
         } catch (error) {
             console.error('Erreur lors du chargement des machines:', error);
-            machineList.innerHTML = `<p class="text-red-600 dark:text-red-400 text-sm">Erreur: ${error.message}</p>`;
+            machineList.innerHTML = `
+                <div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/30 dark:text-red-200">
+                    Erreur&nbsp;: ${this.escapeHtml(error.message || 'Chargement impossible')}
+                </div>
+            `;
         }
+    }
+
+    getConnectedMachineUuidSet() {
+        const connected = new Set();
+        if (typeof window.machineManager !== 'undefined' && window.machineManager?.machines) {
+            window.machineManager.machines.forEach((machine) => {
+                if (machine && machine.uuid && machine.isConnected) {
+                    connected.add(machine.uuid);
+                }
+            });
+        }
+        return connected;
+    }
+
+    renderMachineSelection(machines, connectedMachineIds, selectedUuid) {
+        const machineList = document.getElementById('machineList');
+        if (!machineList) return;
+
+        if (!Array.isArray(machines) || machines.length === 0) {
+            machineList.innerHTML = `
+                <div class="space-y-3 rounded-lg border border-dashed border-gray-300 bg-white/70 p-6 text-sm text-gray-600 dark:border-gray-600 dark:bg-gray-800/70 dark:text-gray-300">
+                    <div class="flex items-start gap-3">
+                        <svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 18a6 6 0 100-12 6 6 0 000 12z" />
+                        </svg>
+                        <div>
+                            <p class="font-semibold text-gray-800 dark:text-gray-100">Aucune machine enregistrée</p>
+                            <p class="mt-1 text-xs leading-relaxed">Ajoutez votre première machine pour importer un mesh directement depuis l&rsquo;imprimante.</p>
+                        </div>
+                    </div>
+                    <button
+                        id="addMachineFromModal"
+                        type="button"
+                        class="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                        Ajouter une machine
+                    </button>
+                </div>
+            `;
+
+            const addBtn = document.getElementById('addMachineFromModal');
+            if (addBtn) {
+                addBtn.addEventListener('click', () => this.handleAddMachineFromModal(addBtn));
+            }
+            return;
+        }
+
+        const sortedMachines = [...machines].sort((a, b) => {
+            const aConnected = connectedMachineIds.has(a.uuid);
+            const bConnected = connectedMachineIds.has(b.uuid);
+            if (aConnected !== bConnected) {
+                return aConnected ? -1 : 1;
+            }
+            const aName = (a.name || '').toLowerCase();
+            const bName = (b.name || '').toLowerCase();
+            return aName.localeCompare(bName);
+        });
+
+        machineList.innerHTML = `
+            <div class="space-y-5" id="machineSelectionWrapper">
+                <div>
+                    <label for="machineDropdown" class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Machine à interroger</label>
+                    <div class="relative mt-2">
+                        <select
+                            id="machineDropdown"
+                            class="w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 shadow-sm transition focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                        ></select>
+                        <span class="machine-select-chevron absolute inset-y-0 right-3 flex items-center text-gray-400 dark:text-gray-500">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 9.75l3.75 3.75 3.75-3.75" />
+                            </svg>
+                        </span>
+                    </div>
+                    <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                        <span id="machineStatusBadge" class="machine-status-badge bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200">
+                            <span id="machineStatusDot" class="machine-status-dot bg-gray-400"></span>
+                            <span id="machineStatusLabel">En attente</span>
+                        </span>
+                        <span id="machineStatusHint" class="text-xs">Sélectionnez une machine disponible.</span>
+                    </div>
+                    <p id="machineSelectionDetails" class="mt-2 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                        Choisissez une machine pour lancer l&rsquo;import depuis le plateau.
+                    </p>
+                </div>
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <button
+                        id="connectSelectedMachine"
+                        type="button"
+                        class="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white shadow transition hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:cursor-not-allowed disabled:bg-gray-400 sm:w-auto"
+                    >
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25M21 12H9" />
+                        </svg>
+                        Importer depuis la machine
+                    </button>
+                    <button
+                        id="addMachineFromModal"
+                        type="button"
+                        class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600 sm:w-auto"
+                    >
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                        Ajouter une machine
+                    </button>
+                </div>
+                <div class="rounded-lg border border-dashed border-gray-300 p-4 text-xs text-gray-500 dark:border-gray-600 dark:text-gray-400">
+                    <p class="font-medium text-gray-700 dark:text-gray-200">Astuce</p>
+                    <p class="mt-1 leading-relaxed">Assurez-vous d&rsquo;avoir autorisé la machine via le navigateur avant d&rsquo;importer un mesh.</p>
+                </div>
+            </div>
+        `;
+
+        const dropdown = document.getElementById('machineDropdown');
+        if (!dropdown) {
+            return;
+        }
+
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Sélectionnez une machine';
+        placeholder.disabled = true;
+        dropdown.appendChild(placeholder);
+
+        let selectionApplied = false;
+        sortedMachines.forEach((machine) => {
+            const option = document.createElement('option');
+            option.value = machine.uuid;
+            option.textContent = `${machine.name || 'Machine sans nom'}${machine.last_port ? ` — ${machine.last_port}` : ''}`;
+            option.dataset.name = machine.name || 'Machine';
+            option.dataset.baud = machine.baud_rate ? String(machine.baud_rate) : '115200';
+            option.dataset.port = machine.last_port || '';
+            option.dataset.connected = connectedMachineIds.has(machine.uuid) ? 'true' : 'false';
+            dropdown.appendChild(option);
+            if (!selectionApplied && selectedUuid && machine.uuid === selectedUuid) {
+                option.selected = true;
+                selectionApplied = true;
+            }
+        });
+
+        if (!selectionApplied && dropdown.options.length > 1) {
+            dropdown.selectedIndex = 1;
+        } else if (!selectionApplied) {
+            placeholder.selected = true;
+        }
+
+        const addBtn = document.getElementById('addMachineFromModal');
+        if (addBtn) {
+            addBtn.addEventListener('click', () => this.handleAddMachineFromModal(addBtn));
+        }
+
+        this.setupMachineSelectionInteractions();
+    }
+
+    setupMachineSelectionInteractions() {
+        const dropdown = document.getElementById('machineDropdown');
+        const connectBtn = document.getElementById('connectSelectedMachine');
+        const statusBadge = document.getElementById('machineStatusBadge');
+        const statusDot = document.getElementById('machineStatusDot');
+        const statusLabel = document.getElementById('machineStatusLabel');
+        const statusHint = document.getElementById('machineStatusHint');
+        const detailsElement = document.getElementById('machineSelectionDetails');
+
+        const update = () => {
+            this.updateMachineSelectionDetails({ dropdown, statusBadge, statusDot, statusLabel, statusHint, detailsElement });
+            if (connectBtn) {
+                connectBtn.disabled = !(dropdown && dropdown.value);
+            }
+        };
+
+        if (dropdown) {
+            dropdown.addEventListener('change', update);
+        }
+
+        if (connectBtn) {
+            connectBtn.addEventListener('click', (event) => {
+                if (!dropdown || !dropdown.value) {
+                    this.notify('Sélectionnez une machine à connecter.', 'warning');
+                    return;
+                }
+                const option = dropdown.selectedOptions[0];
+                const machineData = {
+                    uuid: option.value,
+                    name: option.dataset.name,
+                    baudRate: parseInt(option.dataset.baud, 10),
+                    port: option.dataset.port
+                };
+                this.connectAndImportFromMachine(machineData, event);
+            });
+        }
+
+        update();
+    }
+
+    updateMachineSelectionDetails({ dropdown, statusBadge, statusDot, statusLabel, statusHint, detailsElement }) {
+        if (!dropdown || !statusBadge || !statusDot || !statusLabel || !detailsElement) {
+            return;
+        }
+
+        const option = dropdown.selectedOptions?.[0];
+        if (!option || !option.value) {
+            statusBadge.classList.remove('bg-green-100', 'text-green-700', 'dark:bg-green-900/40', 'dark:text-green-200', 'bg-amber-100', 'text-amber-700', 'dark:bg-amber-900/40', 'dark:text-amber-200');
+            statusBadge.classList.add('bg-gray-100', 'text-gray-700', 'dark:bg-gray-700', 'dark:text-gray-200');
+            statusDot.style.backgroundColor = '#9ca3af';
+            statusLabel.textContent = 'En attente';
+            if (statusHint) {
+                statusHint.textContent = 'Sélectionnez une machine disponible.';
+            }
+            detailsElement.textContent = 'Choisissez une machine pour lancer l’import depuis le plateau.';
+            return;
+        }
+
+        const name = option.dataset.name || 'Machine';
+        const port = option.dataset.port ? `Port ${option.dataset.port}` : 'Port inconnu';
+        const baud = option.dataset.baud ? `${option.dataset.baud} bauds` : 'Vitesse non définie';
+        const isConnected = option.dataset.connected === 'true';
+
+        statusBadge.classList.remove('bg-gray-100', 'text-gray-700', 'dark:bg-gray-700', 'dark:text-gray-200', 'bg-amber-100', 'text-amber-700', 'dark:bg-amber-900/40', 'dark:text-amber-200', 'bg-green-100', 'text-green-700', 'dark:bg-green-900/40', 'dark:text-green-200');
+
+        if (isConnected) {
+            statusBadge.classList.add('bg-green-100', 'text-green-700', 'dark:bg-green-900/40', 'dark:text-green-200');
+            statusDot.style.backgroundColor = '#16a34a';
+            statusLabel.textContent = 'Connectée';
+            if (statusHint) {
+                statusHint.textContent = 'La liaison série est prête pour les commandes.';
+            }
+        } else {
+            statusBadge.classList.add('bg-amber-100', 'text-amber-700', 'dark:bg-amber-900/40', 'dark:text-amber-200');
+            statusDot.style.backgroundColor = '#d97706';
+            statusLabel.textContent = 'Autorisation requise';
+            if (statusHint) {
+                statusHint.textContent = 'L’autorisation série sera demandée lors de l’import.';
+            }
+        }
+
+        detailsElement.textContent = `Machine « ${name} » — ${port}, ${baud}.`;
+    }
+
+    async handleAddMachineFromModal(button) {
+        const supportsSerial = typeof navigator !== 'undefined' && 'serial' in navigator;
+        if (!supportsSerial) {
+            this.notify('La Web Serial API n’est pas disponible sur ce navigateur.', 'error');
+            return;
+        }
+
+        let originalContent = null;
+        if (button) {
+            button.disabled = true;
+            originalContent = button.innerHTML;
+            button.innerHTML = '<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V2C5.373 2 2 5.373 2 12h2zm2 5.291A7.962 7.962 0 014 12H2c0 3.042 1.135 5.824 3 7.938l1-2.647z"></path></svg>';
+        }
+
+        try {
+            if (typeof MachineManager === 'undefined') {
+                throw new Error('Le gestionnaire de machines n’est pas disponible.');
+            }
+
+            if (typeof window.machineManager === 'undefined') {
+                window.machineManager = new MachineManager();
+                await window.machineManager.loadMachinesFromDB();
+            }
+
+            await window.machineManager.addMachine();
+            await this.showMachineSelection();
+        } catch (error) {
+            console.error('Erreur lors de l’ajout de la machine depuis le mesh viewer:', error);
+            const message = error?.message || 'Impossible d’ajouter la machine.';
+            this.notify(message, 'error');
+        } finally {
+            if (button) {
+                button.disabled = false;
+                if (originalContent) {
+                    button.innerHTML = originalContent;
+                }
+            }
+        }
+    }
+
+    escapeHtml(value) {
+        if (value === null || value === undefined) {
+            return '';
+        }
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
     
     /**
@@ -2098,19 +2912,251 @@ class MeshViewer {
             this.machineDataBuffer = '';
         }
         this.machineDataBuffer += text;
-        
+
         // Log pour débogage
         console.log('Données collectées:', text.substring(0, 100));
         console.log('Buffer total:', this.machineDataBuffer.length, 'caractères');
-        
-        // Vérifier si la réponse est complète
-        this.checkAndImportFromBuffer();
+
+        if (this.pointRefreshState) {
+            this.tryFinalizePointRefresh();
+        } else {
+            // Vérifier si la réponse est complète
+            this.checkAndImportFromBuffer();
+        }
     }
-    
+
+    tryFinalizePointRefresh() {
+        if (!this.pointRefreshState || !this.machineDataBuffer) {
+            return;
+        }
+
+        const buffer = this.machineDataBuffer;
+        const hasOk = /(^|\n|\r)ok\b/i.test(buffer.trim());
+        if (!hasOk) {
+            return;
+        }
+
+        const value = this.parsePointProbeValueFromBuffer(buffer);
+        if (typeof value !== 'number' || Number.isNaN(value)) {
+            this.failPointRefresh('Impossible d’interpréter la réponse de la machine pour ce point.');
+            return;
+        }
+
+        this.finalizePointRefresh(value);
+    }
+
+    parsePointProbeValueFromBuffer(text) {
+        if (!text) {
+            return null;
+        }
+
+        const sanitized = text.replace(/\r/g, '\n');
+        const lines = sanitized.split('\n').map(line => line.trim()).filter(Boolean);
+        const candidates = [];
+
+        for (const line of lines) {
+            if (!line || line.startsWith('>') || /^ok\b/i.test(line)) {
+                continue;
+            }
+
+            const zMatch = line.match(/(?:^|\s)Z[:=]\s*([+-]?\d+(?:\.\d+)?)/i);
+            if (zMatch) {
+                const parsed = parseFloat(zMatch[1]);
+                if (!Number.isNaN(parsed)) {
+                    return parsed;
+                }
+            }
+
+            const explicitMatch = line.match(/(?:value|mesure|hauteur|height|offset)[:=\s]+([+-]?\d+(?:\.\d+)?)/i);
+            if (explicitMatch) {
+                const parsed = parseFloat(explicitMatch[1]);
+                if (!Number.isNaN(parsed)) {
+                    candidates.push(parsed);
+                    continue;
+                }
+            }
+
+            const decimals = line.match(/[+-]?\d+\.\d+/g);
+            if (decimals) {
+                decimals.forEach((item) => {
+                    const parsed = parseFloat(item);
+                    if (!Number.isNaN(parsed)) {
+                        candidates.push(parsed);
+                    }
+                });
+            }
+        }
+
+        if (candidates.length > 0) {
+            return candidates[candidates.length - 1];
+        }
+
+        return null;
+    }
+
+    finalizePointRefresh(value) {
+        if (!this.pointRefreshState) {
+            return;
+        }
+
+        const { row, col, cell, button, originalContent, machineId, coordinates } = this.pointRefreshState;
+
+        if (button) {
+            button.disabled = false;
+            button.classList.remove('loading');
+            if (typeof originalContent === 'string') {
+                button.innerHTML = originalContent;
+            }
+        }
+
+        if (cell) {
+            cell.classList.remove('mesh-cell-refreshing');
+        }
+
+        if (typeof this.serialUnsubscribe === 'function') {
+            this.serialUnsubscribe();
+            this.serialUnsubscribe = null;
+        }
+
+        if (this.importTimeout) {
+            clearTimeout(this.importTimeout);
+            this.importTimeout = null;
+        }
+
+        this.currentMeshMachineId = null;
+        this.machineDataBuffer = null;
+        this.autoImportDone = false;
+
+        let numericValue = value;
+        if (typeof numericValue !== 'number') {
+            numericValue = parseFloat(numericValue);
+        }
+        if (Number.isNaN(numericValue)) {
+            numericValue = null;
+        }
+
+        if (this.meshData && Array.isArray(this.meshData.matrix) && numericValue !== null) {
+            this.meshData.matrix[row][col] = numericValue;
+            this.markMeshDataDirty();
+
+            const stats = this.calculateStats(this.meshData.matrix);
+            this.minValue = stats.min;
+            this.maxValue = stats.max;
+
+            if (cell) {
+                this.applyValueToCell(cell, numericValue, stats);
+                cell.classList.add('mesh-cell-refreshed');
+                setTimeout(() => {
+                    if (cell && cell.classList) {
+                        cell.classList.remove('mesh-cell-refreshed');
+                    }
+                }, 1200);
+            }
+
+            this.updateStats(stats, this.meshData.rows, this.meshData.cols);
+            this.updateLegend(stats.min, stats.max);
+            this.updateMatrixColors(stats.min, stats.max);
+        }
+
+        const pointCoordinates = coordinates || this.getMeshPointCoordinates(row, col) || {};
+        let coordinateSuffix = '';
+        if (Number.isFinite(pointCoordinates.x) && Number.isFinite(pointCoordinates.y)) {
+            coordinateSuffix = ` (X=${pointCoordinates.x.toFixed(2)} Y=${pointCoordinates.y.toFixed(2)})`;
+        }
+
+        if (numericValue !== null) {
+            this.notify(`Valeur du point (${row + 1}, ${col + 1})${coordinateSuffix} mise à jour: ${numericValue.toFixed(3)} mm`, 'success');
+        } else {
+            this.notify(`Valeur du point (${row + 1}, ${col + 1})${coordinateSuffix} mise à jour.`, 'success');
+        }
+
+        const targetMachineId = machineId || this.lastMeshMachineId;
+        if (targetMachineId) {
+            this.persistMeshAfterPointRefresh(targetMachineId);
+        }
+
+        this.pointRefreshState = null;
+    }
+
+    async persistMeshAfterPointRefresh(machineId) {
+        try {
+            if (typeof MachineManager === 'undefined') {
+                throw new Error('Gestionnaire de machines indisponible.');
+            }
+
+            if (typeof window.machineManager === 'undefined') {
+                window.machineManager = new MachineManager();
+                await window.machineManager.loadMachinesFromDB();
+            }
+
+            const machineManager = window.machineManager;
+            let machine = machineManager.machines.get(machineId);
+
+            if (!machine) {
+                await machineManager.loadMachinesFromDB();
+                machine = machineManager.machines.get(machineId);
+            }
+
+            if (!machine) {
+                throw new Error('Machine introuvable pour la sauvegarde du mesh.');
+            }
+
+            const supportsSerial = typeof navigator !== 'undefined' && 'serial' in navigator;
+            if (!machine.isConnected) {
+                if (!supportsSerial) {
+                    throw new Error('Connexion série indisponible pour sauvegarder le mesh.');
+                }
+
+                const authorizedPorts = await navigator.serial.getPorts();
+                if (authorizedPorts.length > 0) {
+                    await machineManager.connectExistingMachine(machineId);
+                } else {
+                    await machineManager.authorizeAndConnect(machineId);
+                }
+                machine = machineManager.machines.get(machineId);
+            }
+
+            if (!machine || !machine.isConnected || !machine.port) {
+                throw new Error('Impossible d\'accéder au port de la machine pour la sauvegarde du mesh.');
+            }
+
+            const commands = ['G29 S1', 'M500'];
+            const encoder = new TextEncoder();
+
+            for (const command of commands) {
+                let writer;
+                try {
+                    writer = machine.port.writable.getWriter();
+                    await writer.write(encoder.encode(`${command}\n`));
+                } finally {
+                    writer?.releaseLock();
+                }
+
+                await this.delay(150);
+            }
+
+            this.notify('Mesh sauvegardé dans le slot 1 et enregistré dans l\'EEPROM.', 'success');
+        } catch (error) {
+            console.error('Erreur lors de la sauvegarde du mesh:', error);
+            this.notify('Valeur mise à jour, mais la sauvegarde sur la machine a échoué.', 'warning');
+        }
+    }
+
+    delay(ms) {
+        const safeDelay = Number.isFinite(ms) && ms > 0 ? ms : 0;
+        return new Promise((resolve) => {
+            setTimeout(resolve, safeDelay);
+        });
+    }
+
     /**
      * Vérifie si la réponse est complète dans le buffer et importe automatiquement
      */
     checkAndImportFromBuffer() {
+        if (this.pointRefreshState) {
+            return;
+        }
+
         if (!this.machineDataBuffer) return;
         
         const lines = this.machineDataBuffer.split('\n');
@@ -2178,8 +3224,17 @@ class MeshViewer {
 
         // Importer les données
         this.meshData = meshData;
+
+        const importUuid = this.lastMeshMachineUuid;
+        if (importUuid) {
+            const workspace = this.machineWorkspaces.get(importUuid) || this.lastMeshMachineWorkspace;
+            if (workspace) {
+                this.applyWorkspaceToMesh(this.meshData, workspace);
+            }
+        }
+
         this.markMeshDataDirty();
-        this.renderMatrix(meshData);
+        this.renderMatrix(this.meshData);
 
         if (this.currentMeshMachineId !== null && this.currentMeshMachineId !== undefined) {
             this.lastMeshMachineId = this.currentMeshMachineId;
@@ -2214,6 +3269,8 @@ class MeshViewer {
             this.notify('Veuillez saisir une commande de récupération.', 'error');
             return;
         }
+
+        this.lastMeshMachineUuid = machineData?.uuid || null;
 
         const supportsSerial = typeof navigator !== 'undefined' && 'serial' in navigator;
         if (!supportsSerial) {
@@ -2265,6 +3322,11 @@ class MeshViewer {
                 throw new Error('Machine non trouvée dans le gestionnaire.');
             }
 
+            let machineWorkspace = null;
+            if (machine.uuid) {
+                machineWorkspace = await this.ensureMachineWorkspace(machine.uuid);
+            }
+
             if (!machine.isConnected) {
                 const hasAuthorizedPorts = 'serial' in navigator && (await navigator.serial.getPorts()).length > 0;
                 if (hasAuthorizedPorts) {
@@ -2273,10 +3335,18 @@ class MeshViewer {
                     await window.machineManager.authorizeAndConnect(machineId);
                 }
                 machine = window.machineManager.machines.get(machineId);
+                if (!machineWorkspace && machine?.uuid) {
+                    machineWorkspace = await this.ensureMachineWorkspace(machine.uuid);
+                }
             }
 
             if (!machine || !machine.isConnected || !machine.port) {
                 throw new Error('Impossible de connecter la machine. Veuillez vérifier la connexion série.');
+            }
+
+            if (machine.uuid && machineWorkspace) {
+                this.machineWorkspaces.set(machine.uuid, machineWorkspace);
+                this.lastMeshMachineWorkspace = machineWorkspace;
             }
 
             if (!window.machineManager.readers.has(machineId)) {
