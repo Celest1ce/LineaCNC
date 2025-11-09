@@ -536,6 +536,7 @@ class MeshViewer {
 
         const lines = text.trim().split('\n');
         const dataLines = [];
+        const coordinatePairs = [];
         let columnHeaderValues = null;
         
         // Trouver les lignes de données (celles qui contiennent des valeurs numériques avec + ou -)
@@ -552,9 +553,22 @@ class MeshViewer {
                 continue;
             }
             
-            // Ignorer les lignes de coordonnées (1,299) etc.
-            if (line.match(/^\([^)]*\)\s*\([^)]*\)$/) || line.match(/^\([^)]*\)$/)) {
-                continue;
+            // Extraire les coordonnées physiques indiquées entre parenthèses (ex: (0,0) (150,0))
+            if (line.includes('(') && line.includes(')')) {
+                const pairPattern = /\(\s*([-+]?\d*\.?\d+)\s*,\s*([-+]?\d*\.?\d+)\s*\)/g;
+                let pairMatch;
+                while ((pairMatch = pairPattern.exec(line)) !== null) {
+                    const x = parseFloat(pairMatch[1]);
+                    const y = parseFloat(pairMatch[2]);
+                    if (Number.isFinite(x) && Number.isFinite(y)) {
+                        coordinatePairs.push({ x, y });
+                    }
+                }
+
+                const cleanedLine = line.replace(/\(\s*[-+]?\d*\.?\d+\s*,\s*[-+]?\d*\.?\d+\s*\)/g, '').trim();
+                if (cleanedLine === '' || cleanedLine === '|') {
+                    continue;
+                }
             }
             
             // Ignorer les lignes "ok" ou autres messages de confirmation
@@ -727,7 +741,7 @@ class MeshViewer {
         
         // Créer la matrice et compter les valeurs manquantes
         const matrix = [];
-        const rowCoordinates = [];
+        let rowCoordinates = [];
         let missingCount = 0;
         let totalValues = 0;
 
@@ -757,6 +771,37 @@ class MeshViewer {
 
         if (colCoordinates.length !== numCols) {
             colCoordinates = Array.from({ length: numCols }, (_, index) => index);
+        }
+
+        if (coordinatePairs.length) {
+            const tolerance = 0.0001;
+
+            const dedupeAndSort = (values, { ascending = true } = {}) => {
+                const sorted = values
+                    .filter((value) => Number.isFinite(value))
+                    .sort((a, b) => (ascending ? a - b : b - a));
+                const deduped = [];
+                for (const value of sorted) {
+                    const exists = deduped.some((existing) => Math.abs(existing - value) <= tolerance);
+                    if (!exists) {
+                        deduped.push(value);
+                    }
+                }
+                return deduped;
+            };
+
+            const uniqueX = dedupeAndSort(coordinatePairs.map((pair) => pair.x), { ascending: true });
+            const uniqueY = dedupeAndSort(coordinatePairs.map((pair) => pair.y), { ascending: false });
+
+            const isSequential = (values) => values.length === values.filter((value, index) => Number.isFinite(value) && Math.abs(value - index) <= 1e-6).length;
+
+            if (uniqueX.length >= numCols && isSequential(colCoordinates)) {
+                colCoordinates = uniqueX.slice(0, numCols);
+            }
+
+            if (uniqueY.length >= numRows && isSequential(rowCoordinates)) {
+                rowCoordinates = uniqueY.slice(0, numRows);
+            }
         }
 
         return {
