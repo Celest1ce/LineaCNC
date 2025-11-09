@@ -533,9 +533,11 @@ class MeshViewer {
         if (!text || text.trim() === '') {
             return null;
         }
-        
+
         const lines = text.trim().split('\n');
         const dataLines = [];
+        const coordinatePairs = [];
+        let columnHeaderValues = null;
         
         // Trouver les lignes de données (celles qui contiennent des valeurs numériques avec + ou -)
         for (let i = 0; i < lines.length; i++) {
@@ -551,9 +553,22 @@ class MeshViewer {
                 continue;
             }
             
-            // Ignorer les lignes de coordonnées (1,299) etc.
-            if (line.match(/^\([^)]*\)\s*\([^)]*\)$/) || line.match(/^\([^)]*\)$/)) {
-                continue;
+            // Extraire les coordonnées physiques indiquées entre parenthèses (ex: (0,0) (150,0))
+            if (line.includes('(') && line.includes(')')) {
+                const pairPattern = /\(\s*([-+]?\d*\.?\d+)\s*,\s*([-+]?\d*\.?\d+)\s*\)/g;
+                let pairMatch;
+                while ((pairMatch = pairPattern.exec(line)) !== null) {
+                    const x = parseFloat(pairMatch[1]);
+                    const y = parseFloat(pairMatch[2]);
+                    if (Number.isFinite(x) && Number.isFinite(y)) {
+                        coordinatePairs.push({ x, y });
+                    }
+                }
+
+                const cleanedLine = line.replace(/\(\s*[-+]?\d*\.?\d+\s*,\s*[-+]?\d*\.?\d+\s*\)/g, '').trim();
+                if (cleanedLine === '' || cleanedLine === '|') {
+                    continue;
+                }
             }
             
             // Ignorer les lignes "ok" ou autres messages de confirmation
@@ -562,7 +577,13 @@ class MeshViewer {
             }
             
             // Ignorer les lignes de séparateurs ou de numéros de colonnes uniquement (sans pipe)
-            if (line.match(/^[0-9\s]+$/) && !line.includes('|')) {
+            if (line.match(/^[0-9\s.+-]+$/) && !line.includes('|')) {
+                const headerMatches = line.match(/[+-]?\d+(?:\.\d+)?/g);
+                if (headerMatches && headerMatches.length) {
+                    columnHeaderValues = headerMatches
+                        .map(value => parseFloat(value))
+                        .map(value => (Number.isNaN(value) ? null : value));
+                }
                 continue;
             }
             
@@ -576,12 +597,15 @@ class MeshViewer {
             if (line.includes('|')) {
                 const parts = line.split('|');
                 if (parts.length >= 2) {
-                    const rowIndexMatch = parts[0].match(/(\d+)\s*$/);
+                    const rowIndexMatch = parts[0].match(/([+-]?\d+(?:\.\d+)?)\s*$/);
                     if (!rowIndexMatch) {
                         continue;
                     }
 
-                    const rowIndex = parseInt(rowIndexMatch[1], 10);
+                    const parsedRow = parseFloat(rowIndexMatch[1]);
+                    const hasValidRow = !Number.isNaN(parsedRow);
+                    const rowIndex = hasValidRow ? parsedRow : dataLines.length;
+                    const rowOrder = dataLines.length;
 
                     // Extraire la partie après le pipe (enlever le | final si présent)
                     let valuesStr = parts.slice(1).join('|').trim();
@@ -649,7 +673,12 @@ class MeshViewer {
                     // Cela permet de préserver la structure de la grille
                     // On vérifie qu'on a au moins une valeur ou des nulls (structure présente)
                     if (values.length > 0) {
-                        dataLines.push({ row: rowIndex, values });
+                        dataLines.push({
+                            row: rowIndex,
+                            values,
+                            coord: hasValidRow ? parsedRow : null,
+                            order: rowOrder
+                        });
                     }
                 }
             }
@@ -659,8 +688,28 @@ class MeshViewer {
             return null;
         }
         
-        // Trier par index de ligne (décroissant - la ligne 9 en haut, ligne 0 en bas)
-        dataLines.sort((a, b) => b.row - a.row);
+        // Trier par index de ligne (décroissant - la ligne la plus haute en premier)
+        dataLines.sort((a, b) => {
+            const hasCoordA = typeof a.coord === 'number' && !Number.isNaN(a.coord);
+            const hasCoordB = typeof b.coord === 'number' && !Number.isNaN(b.coord);
+
+            if (hasCoordA && hasCoordB) {
+                if (b.coord !== a.coord) {
+                    return b.coord - a.coord;
+                }
+                return a.order - b.order;
+            }
+
+            if (hasCoordA) {
+                return -1;
+            }
+
+            if (hasCoordB) {
+                return 1;
+            }
+
+            return a.order - b.order;
+        });
         
         // Déterminer la taille de la matrice (utiliser le nombre maximum de colonnes)
         const numRows = dataLines.length;
@@ -692,12 +741,17 @@ class MeshViewer {
         
         // Créer la matrice et compter les valeurs manquantes
         const matrix = [];
+        let rowCoordinates = [];
         let missingCount = 0;
         let totalValues = 0;
-        
+
         for (let i = 0; i < numRows; i++) {
             matrix.push([]);
             const rowData = dataLines[i];
+            const rowCoord = typeof rowData.coord === 'number' && !Number.isNaN(rowData.coord)
+                ? rowData.coord
+                : i;
+            rowCoordinates.push(rowCoord);
             for (let j = 0; j < numCols; j++) {
                 if (rowData.values[j] !== undefined && rowData.values[j] !== null) {
                     matrix[i].push(rowData.values[j]);
@@ -708,13 +762,56 @@ class MeshViewer {
                 }
             }
         }
-        
+
+        let colCoordinates = Array.isArray(columnHeaderValues)
+            ? columnHeaderValues.slice(0, numCols).map((value, index) => (
+                typeof value === 'number' && !Number.isNaN(value) ? value : index
+            ))
+            : [];
+
+        if (colCoordinates.length !== numCols) {
+            colCoordinates = Array.from({ length: numCols }, (_, index) => index);
+        }
+
+        if (coordinatePairs.length) {
+            const tolerance = 0.0001;
+
+            const dedupeAndSort = (values, { ascending = true } = {}) => {
+                const sorted = values
+                    .filter((value) => Number.isFinite(value))
+                    .sort((a, b) => (ascending ? a - b : b - a));
+                const deduped = [];
+                for (const value of sorted) {
+                    const exists = deduped.some((existing) => Math.abs(existing - value) <= tolerance);
+                    if (!exists) {
+                        deduped.push(value);
+                    }
+                }
+                return deduped;
+            };
+
+            const uniqueX = dedupeAndSort(coordinatePairs.map((pair) => pair.x), { ascending: true });
+            const uniqueY = dedupeAndSort(coordinatePairs.map((pair) => pair.y), { ascending: false });
+
+            const isSequential = (values) => values.length === values.filter((value, index) => Number.isFinite(value) && Math.abs(value - index) <= 1e-6).length;
+
+            if (uniqueX.length >= numCols && isSequential(colCoordinates)) {
+                colCoordinates = uniqueX.slice(0, numCols);
+            }
+
+            if (uniqueY.length >= numRows && isSequential(rowCoordinates)) {
+                rowCoordinates = uniqueY.slice(0, numRows);
+            }
+        }
+
         return {
             matrix,
             rows: numRows,
             cols: numCols,
             missingCount,
-            totalValues
+            totalValues,
+            rowCoordinates,
+            colCoordinates
         };
     }
     
@@ -1022,12 +1119,14 @@ class MeshViewer {
         if (legendMax) legendMax.textContent = max.toFixed(3);
     }
     
-    createCellRefreshButton() {
+    createCellRefreshButton(row, col) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'mesh-cell-refresh';
         button.setAttribute('aria-label', 'Rafraîchir la valeur depuis la machine');
         button.title = 'Rafraîchir la valeur depuis la machine';
+        button.dataset.row = String(row);
+        button.dataset.col = String(col);
         button.innerHTML = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7V4m0 0h3M4 4l3.5 3.5M16 13v3m0 0h-3m3 0l-3.5-3.5M6.464 6.464a6 6 0 018.485 0M13.536 13.536a6 6 0 01-8.485 0"></path></svg>';
         return button;
     }
@@ -1080,7 +1179,21 @@ class MeshViewer {
         cell.dataset.row = row;
         cell.dataset.col = col;
 
-        const refreshButton = this.createCellRefreshButton();
+        if (this.meshData && Array.isArray(this.meshData.rowCoordinates)) {
+            const yCoord = this.meshData.rowCoordinates[row];
+            if (Number.isFinite(yCoord)) {
+                cell.dataset.yCoord = yCoord;
+            }
+        }
+
+        if (this.meshData && Array.isArray(this.meshData.colCoordinates)) {
+            const xCoord = this.meshData.colCoordinates[col];
+            if (Number.isFinite(xCoord)) {
+                cell.dataset.xCoord = xCoord;
+            }
+        }
+
+        const refreshButton = this.createCellRefreshButton(row, col);
         const valueSpan = document.createElement('span');
         valueSpan.className = 'mesh-cell-value';
 
@@ -1088,6 +1201,25 @@ class MeshViewer {
         cell.appendChild(valueSpan);
 
         this.applyValueToCell(cell, value, stats);
+
+        const updateRefreshTooltip = () => {
+            const coordinates = this.getCellCoordinates(row, col);
+            if (coordinates && Number.isFinite(coordinates.x) && Number.isFinite(coordinates.y)) {
+                const command = `G30 X${coordinates.x.toFixed(3)} Y${coordinates.y.toFixed(3)}`;
+                refreshButton.title = command;
+                refreshButton.setAttribute('aria-label', `Rafraîchir la valeur depuis la machine (${command})`);
+                refreshButton.dataset.command = command;
+            } else {
+                refreshButton.title = 'Coordonnées indisponibles';
+                refreshButton.setAttribute('aria-label', 'Coordonnées indisponibles');
+                delete refreshButton.dataset.command;
+            }
+        };
+
+        updateRefreshTooltip();
+
+        refreshButton.addEventListener('mouseenter', updateRefreshTooltip);
+        refreshButton.addEventListener('focus', updateRefreshTooltip);
 
         refreshButton.addEventListener('click', (event) => {
             event.stopPropagation();
@@ -1097,6 +1229,45 @@ class MeshViewer {
         cell.addEventListener('click', () => this.editCell(cell, row, col));
 
         return cell;
+    }
+
+    getCellCoordinates(row, col) {
+        if (!this.meshData) {
+            return null;
+        }
+
+        const computeCoordinate = (index, coordinates, count) => {
+            if (!Array.isArray(coordinates) || count <= 0) {
+                return null;
+            }
+
+            const value = coordinates[index];
+            if (Number.isFinite(value)) {
+                return value;
+            }
+
+            const finiteValues = coordinates.filter(Number.isFinite);
+            if (finiteValues.length >= 2 && count > 1) {
+                const min = Math.min(...finiteValues);
+                const max = Math.max(...finiteValues);
+                const step = (max - min) / (count - 1);
+                if (Number.isFinite(step)) {
+                    return min + step * index;
+                }
+            }
+
+            return count > 1 ? index : null;
+        };
+
+        const { rowCoordinates, colCoordinates, rows, cols } = this.meshData;
+        const y = computeCoordinate(row, rowCoordinates, rows);
+        const x = computeCoordinate(col, colCoordinates, cols);
+
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+            return { x, y };
+        }
+
+        return null;
     }
 
     /**
@@ -1178,12 +1349,20 @@ class MeshViewer {
             return;
         }
 
-        const meshCommandInput = document.getElementById('meshCommand');
-        const meshCommand = meshCommandInput ? meshCommandInput.value.trim() : 'G29 T';
-        if (!meshCommand) {
-            this.notify('Veuillez définir la commande de récupération du mesh.', 'error');
+        const coordinates = this.getCellCoordinates(row, col);
+        if (!coordinates) {
+            this.notify('Impossible de déterminer les coordonnées pour ce point.', 'error');
             return;
         }
+
+        const { x, y } = coordinates;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            this.notify('Coordonnées X/Y invalides pour ce point.', 'error');
+            return;
+        }
+
+        const probeCommand = `G30 X${x.toFixed(3)} Y${y.toFixed(3)}`;
+        console.log('[MeshViewer] Commande envoyée à la machine:', probeCommand);
 
         const originalContent = button.innerHTML;
         button.disabled = true;
@@ -1197,7 +1376,9 @@ class MeshViewer {
             status: 'loading',
             cell,
             button,
-            originalContent
+            originalContent,
+            command: probeCommand,
+            coordinates
         };
 
         try {
@@ -1264,12 +1445,19 @@ class MeshViewer {
             let writer = null;
             try {
                 writer = machine.port.writable.getWriter();
-                await writer.write(encoder.encode(`${meshCommand}\n`));
+                await writer.write(encoder.encode(`${probeCommand}\n`));
             } finally {
                 writer?.releaseLock();
             }
 
-            this.collectMachineData(`> ${meshCommand}\n`);
+            if (this.importTimeout) {
+                clearTimeout(this.importTimeout);
+            }
+            this.importTimeout = setTimeout(() => {
+                this.failPointRefresh('La machine n\'a pas répondu pour ce point.');
+            }, 20000);
+
+            this.collectMachineData(`> ${probeCommand}\n`);
             if (this.pointRefreshState) {
                 this.pointRefreshState.status = 'awaiting-data';
             }
@@ -1317,6 +1505,113 @@ class MeshViewer {
         if (message) {
             this.notify(message, 'error');
         }
+
+        this.pointRefreshState = null;
+    }
+
+    completePointRefresh({ x, y, z }) {
+        if (!this.pointRefreshState) {
+            return;
+        }
+
+        const { cell, button, originalContent, row, col } = this.pointRefreshState;
+        this.pointRefreshState.status = 'complete';
+
+        if (this.importTimeout) {
+            clearTimeout(this.importTimeout);
+            this.importTimeout = null;
+        }
+
+        if (button) {
+            button.disabled = false;
+            button.classList.remove('loading');
+            if (typeof originalContent === 'string') {
+                button.innerHTML = originalContent;
+            }
+        }
+
+        if (cell) {
+            cell.classList.remove('mesh-cell-refreshing');
+        }
+
+        if (!this.meshData || !Array.isArray(this.meshData.matrix)) {
+            this.notify('Mesh non disponible pour appliquer la mesure.', 'error');
+            this.pointRefreshState = null;
+            if (typeof this.serialUnsubscribe === 'function') {
+                this.serialUnsubscribe();
+                this.serialUnsubscribe = null;
+            }
+            this.machineDataBuffer = null;
+            this.currentMeshMachineId = null;
+            return;
+        }
+
+        const rows = this.meshData.rows || this.meshData.matrix.length;
+        const cols = this.meshData.cols || (this.meshData.matrix[0] ? this.meshData.matrix[0].length : 0);
+
+        if (row < 0 || col < 0 || row >= rows || col >= cols) {
+            this.notify('Indice de point invalide pour la mise à jour.', 'error');
+            this.pointRefreshState = null;
+            if (typeof this.serialUnsubscribe === 'function') {
+                this.serialUnsubscribe();
+                this.serialUnsubscribe = null;
+            }
+            this.machineDataBuffer = null;
+            this.currentMeshMachineId = null;
+            return;
+        }
+
+        this.meshData.matrix[row][col] = z;
+
+        if (Array.isArray(this.meshData.rowCoordinates) && Number.isFinite(y)) {
+            this.meshData.rowCoordinates[row] = y;
+        }
+        if (Array.isArray(this.meshData.colCoordinates) && Number.isFinite(x)) {
+            this.meshData.colCoordinates[col] = x;
+        }
+
+        if (cell) {
+            cell.dataset.value = Number.isFinite(z) ? z : '';
+            if (Number.isFinite(y)) {
+                cell.dataset.yCoord = y;
+            }
+            if (Number.isFinite(x)) {
+                cell.dataset.xCoord = x;
+            }
+        }
+
+        const stats = this.calculateStats(this.meshData.matrix);
+        this.meshData.missingCount = rows * cols - stats.count;
+        this.meshData.totalValues = stats.count;
+        this.minValue = stats.min;
+        this.maxValue = stats.max;
+
+        this.markMeshDataDirty();
+        this.updateMatrixColors(stats.min, stats.max);
+        this.updateStats(stats, rows, cols);
+        this.updateLegend(stats.min, stats.max);
+
+        if (cell) {
+            cell.classList.add('mesh-cell-refreshed');
+            setTimeout(() => {
+                cell.classList.remove('mesh-cell-refreshed');
+            }, 1200);
+        }
+
+        const coordinateMessage = Number.isFinite(x) && Number.isFinite(y)
+            ? ` (X=${x.toFixed(3)} Y=${y.toFixed(3)})`
+            : '';
+        const zText = Number.isFinite(z) ? z.toFixed(3) : '-';
+        this.notify(`Point (${row + 1}, ${col + 1})${coordinateMessage} mis à jour: Z ${zText}.`, 'success');
+
+        if (typeof this.serialUnsubscribe === 'function') {
+            this.serialUnsubscribe();
+            this.serialUnsubscribe = null;
+        }
+
+        this.machineDataBuffer = null;
+        this.currentMeshMachineId = null;
+        this.autoImportDone = false;
 
         this.pointRefreshState = null;
     }
@@ -2098,15 +2393,66 @@ class MeshViewer {
             this.machineDataBuffer = '';
         }
         this.machineDataBuffer += text;
-        
+
         // Log pour débogage
         console.log('Données collectées:', text.substring(0, 100));
         console.log('Buffer total:', this.machineDataBuffer.length, 'caractères');
-        
+
+        if (this.pointRefreshState && this.pointRefreshState.status !== 'complete') {
+            if (this.processPointRefreshBuffer()) {
+                return;
+            }
+            return;
+        }
+
         // Vérifier si la réponse est complète
         this.checkAndImportFromBuffer();
     }
-    
+
+    processPointRefreshBuffer() {
+        if (!this.pointRefreshState) {
+            return false;
+        }
+
+        const buffer = this.machineDataBuffer || '';
+        if (!buffer.trim()) {
+            return false;
+        }
+
+        if (/error:/i.test(buffer)) {
+            this.failPointRefresh('La machine a renvoyé une erreur lors du palpage.');
+            return true;
+        }
+
+        const patterns = [
+            /Bed\s*X:\s*([-+]?\d*\.?\d+)\s*Y:\s*([-+]?\d*\.?\d+)\s*Z:\s*([-+]?\d*\.?\d+)/i,
+            /X:\s*([-+]?\d*\.?\d+)\s*Y:\s*([-+]?\d*\.?\d+)\s*Z:\s*([-+]?\d*\.?\d+)/i
+        ];
+
+        for (const pattern of patterns) {
+            const match = buffer.match(pattern);
+            if (match) {
+                const x = parseFloat(match[1]);
+                const y = parseFloat(match[2]);
+                const z = parseFloat(match[3]);
+
+                console.log('[MeshViewer] Mesure reçue de la machine:', {
+                    x,
+                    y,
+                    z
+                });
+
+                if (Number.isFinite(z)) {
+                    this.completePointRefresh({ x, y, z });
+                    return true;
+                }
+            }
+        }
+
+        // Si la réponse contient "ok" sans données mesurées, attendre la fin du timeout
+        return false;
+    }
+
     /**
      * Vérifie si la réponse est complète dans le buffer et importe automatiquement
      */
@@ -2231,7 +2577,7 @@ class MeshViewer {
 
         try {
             if (typeof MachineManager === 'undefined') {
-                throw new Error('Le gestionnaire de machines n'est pas disponible. Veuillez recharger la page.');
+                throw new Error('Le gestionnaire de machines n\'est pas disponible. Veuillez recharger la page.');
             }
 
             if (typeof window.machineManager === 'undefined') {
@@ -2302,6 +2648,7 @@ class MeshViewer {
             let writer = null;
             try {
                 writer = machine.port.writable.getWriter();
+                console.log('[MeshViewer] Commande envoyée à la machine:', meshCommand);
                 await writer.write(encoder.encode(`${meshCommand}\n`));
             } finally {
                 writer?.releaseLock();
@@ -2309,8 +2656,8 @@ class MeshViewer {
 
             this.collectMachineData(`> ${meshCommand}\n`);
         } catch (error) {
-            console.error('Erreur lors de l'import depuis la machine:', error);
-            const message = error.message || 'Erreur lors de l'import.';
+            console.error('Erreur lors de l\'import depuis la machine:', error);
+            const message = error.message || 'Erreur lors de l\'import.';
             this.notify(message, 'error');
             if (typeof this.serialUnsubscribe === 'function') {
                 this.serialUnsubscribe();
