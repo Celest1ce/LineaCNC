@@ -1119,12 +1119,14 @@ class MeshViewer {
         if (legendMax) legendMax.textContent = max.toFixed(3);
     }
     
-    createCellRefreshButton() {
+    createCellRefreshButton(row, col) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'mesh-cell-refresh';
         button.setAttribute('aria-label', 'Rafraîchir la valeur depuis la machine');
         button.title = 'Rafraîchir la valeur depuis la machine';
+        button.dataset.row = String(row);
+        button.dataset.col = String(col);
         button.innerHTML = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7V4m0 0h3M4 4l3.5 3.5M16 13v3m0 0h-3m3 0l-3.5-3.5M6.464 6.464a6 6 0 018.485 0M13.536 13.536a6 6 0 01-8.485 0"></path></svg>';
         return button;
     }
@@ -1191,7 +1193,7 @@ class MeshViewer {
             }
         }
 
-        const refreshButton = this.createCellRefreshButton();
+        const refreshButton = this.createCellRefreshButton(row, col);
         const valueSpan = document.createElement('span');
         valueSpan.className = 'mesh-cell-value';
 
@@ -1199,6 +1201,25 @@ class MeshViewer {
         cell.appendChild(valueSpan);
 
         this.applyValueToCell(cell, value, stats);
+
+        const updateRefreshTooltip = () => {
+            const coordinates = this.getCellCoordinates(row, col);
+            if (coordinates && Number.isFinite(coordinates.x) && Number.isFinite(coordinates.y)) {
+                const command = `G30 X${coordinates.x.toFixed(3)} Y${coordinates.y.toFixed(3)}`;
+                refreshButton.title = command;
+                refreshButton.setAttribute('aria-label', `Rafraîchir la valeur depuis la machine (${command})`);
+                refreshButton.dataset.command = command;
+            } else {
+                refreshButton.title = 'Coordonnées indisponibles';
+                refreshButton.setAttribute('aria-label', 'Coordonnées indisponibles');
+                delete refreshButton.dataset.command;
+            }
+        };
+
+        updateRefreshTooltip();
+
+        refreshButton.addEventListener('mouseenter', updateRefreshTooltip);
+        refreshButton.addEventListener('focus', updateRefreshTooltip);
 
         refreshButton.addEventListener('click', (event) => {
             event.stopPropagation();
