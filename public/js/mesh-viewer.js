@@ -2577,7 +2577,7 @@ class MeshViewer {
 
         try {
             if (typeof MachineManager === 'undefined') {
-                throw new Error('Le gestionnaire de machines n'est pas disponible. Veuillez recharger la page.');
+                throw new Error('Le gestionnaire de machines n\'est pas disponible. Veuillez recharger la page.');
             }
 
             if (typeof window.machineManager === 'undefined') {
@@ -2656,8 +2656,8 @@ class MeshViewer {
 
             this.collectMachineData(`> ${meshCommand}\n`);
         } catch (error) {
-            console.error('Erreur lors de l'import depuis la machine:', error);
-            const message = error.message || 'Erreur lors de l'import.';
+            console.error('Erreur lors de l\'import depuis la machine:', error);
+            const message = error.message || 'Erreur lors de l\'import.';
             this.notify(message, 'error');
             if (typeof this.serialUnsubscribe === 'function') {
                 this.serialUnsubscribe();
