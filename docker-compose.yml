@@ -59,5 +59,21 @@ services:
     ports:
       - "5173:5173"
 
+  phpmyadmin:
+    image: phpmyadmin:5.2
+    container_name: lineacnc-phpmyadmin
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      PMA_HOST: mariadb
+      PMA_PORT: 3306
+      PMA_USER: lineacnc
+      PMA_PASSWORD: lineacncpassword
+      PMA_ARBITRARY: 0
+    ports:
+      - "8081:80"
+
 volumes:
   mariadb_data:

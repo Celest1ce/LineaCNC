@@ -1,0 +1,68 @@
+{
+  "name": "@lineacnc/api",
+  "version": "1.0.0",
+  "description": "LineaCNC API Backend",
+  "type": "module",
+  "main": "dist/server.js",
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "node scripts/prisma-wrapper.cjs generate && tsc --noEmit false",
+    "start": "npm run prisma:deploy && npm run db:seed && cd ../.. && node apps/api/dist/server.js",
+    "prisma:generate": "node scripts/prisma-wrapper.cjs generate",
+    "prisma:migrate": "node scripts/prisma-wrapper.cjs migrate dev",
+    "prisma:migrate:create": "node scripts/prisma-wrapper.cjs migrate dev --create-only",
+    "prisma:deploy": "node scripts/prisma-wrapper.cjs migrate deploy",
+    "prisma:reset": "node scripts/prisma-wrapper.cjs migrate reset",
+    "prisma:studio": "node scripts/prisma-wrapper.cjs studio",
+    "db:push": "node scripts/prisma-wrapper.cjs db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:test": "node scripts/test-db-connection.cjs",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "lint": "eslint src/**/*.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.0",
+    "@types/multer": "^2.0.0",
+    "@types/uuid": "^10.0.0",
+    "bcrypt": "^5.1.1",
+    "connect-session-knex": "^3.0.1",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "csurf": "^1.11.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "express-session": "^1.17.3",
+    "helmet": "^7.1.0",
+    "knex": "^3.0.1",
+    "multer": "^2.0.2",
+    "mysql2": "^3.6.5",
+    "sharp": "^0.34.5",
+    "uuid": "^13.0.0",
+    "winston": "^3.11.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
+    "@types/cookie-parser": "^1.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/csurf": "^1.11.5",
+    "@types/express": "^4.17.21",
+    "@types/express-session": "^1.17.10",
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.10.6",
+    "@types/supertest": "^6.0.2",
+    "jest": "^29.7.0",
+    "prisma": "^6.19.0",
+    "supertest": "^6.3.3",
+    "ts-jest": "^29.1.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "@types/express-serve-static-core": "^4.17.41"
+  }
+}
