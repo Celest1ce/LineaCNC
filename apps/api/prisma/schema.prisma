@@ -1,0 +1,252 @@
+// Prisma schema file for LineaCNC
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  passwordHash      String   @map("password_hash")
+  displayName       String?  @map("display_name")
+  profilePicture    String?  @map("profile_picture")
+  preferredLanguage String   @default("fr") @map("preferred_language")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+// Note: La table 'sessions' est auto-créée et gérée par connect-session-knex
+// (voir apps/api/src/app.ts ligne 53 avec createtable: true)
+// Pas besoin de la gérer avec Prisma
+
+// ==========================================
+// PRINTER MODELS (V2 Normalized Schema)
+// ==========================================
+
+model Printer {
+  id               String  @id @db.VarChar(36)
+  uuid             String  @unique @db.VarChar(255)
+  name             String  @db.VarChar(255)
+  userId           Int?    @map("user_id")
+  connectionStatus String  @default("disconnected") @map("connection_status") @db.VarChar(50)
+  lastConnected    BigInt? @map("last_connected")
+  lastError        String? @map("last_error") @db.Text
+  createdAt        BigInt  @map("created_at")
+  updatedAt        BigInt  @map("updated_at")
+
+  config      PrinterConfig?
+  hardware    PrinterHardware?
+  firmware    PrinterFirmware?
+  port        PrinterPort?
+  state       PrinterState?
+  commands    Command[]
+  logs        Log[]
+  stats       PrinterStats?
+  events      PrinterEvent[]
+  preferences UserPrinterPreference[]
+  parameters  PrinterParameter[]
+
+  @@index([uuid])
+  @@index([userId], map: "idx_user_id")
+  @@index([connectionStatus], map: "idx_connection_status")
+  @@index([updatedAt], map: "idx_updated_at")
+  @@map("printers")
+}
+
+model PrinterConfig {
+  printerId            String  @id @map("printer_id") @db.VarChar(36)
+  autoReconnect        Boolean @default(true) @map("auto_reconnect")
+  reconnectDelay       Int     @default(2000) @map("reconnect_delay")
+  maxReconnectAttempts Int     @default(5) @map("max_reconnect_attempts")
+  commandTimeout       Int     @default(30000) @map("command_timeout")
+  keepAliveInterval    Int     @default(60000) @map("keep_alive_interval")
+  serialOptions        Json    @default("{\"baudRate\": 115200, \"dataBits\": 8, \"stopBits\": 1, \"parity\": \"none\", \"flowControl\": \"none\", \"bufferSize\": 255}") @map("serial_options")
+  customSettings       Json?   @map("custom_settings")
+  updatedAt            BigInt  @map("updated_at")
+
+  printer Printer @relation(fields: [printerId], references: [id], onDelete: Cascade)
+
+  @@map("printer_configs")
+}
+
+model PrinterHardware {
+  printerId     String  @id @map("printer_id") @db.VarChar(36)
+  vendorId      Int?    @map("vendor_id")
+  productId     Int?    @map("product_id")
+  manufacturer  String? @db.VarChar(255)
+  serialNumber  String? @map("serial_number") @db.VarChar(255)
+  hardwareSpecs Json    @default("{}") @map("hardware_specs")
+  updatedAt     BigInt  @map("updated_at")
+
+  printer Printer @relation(fields: [printerId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId, productId], map: "idx_vendor_product")
+  @@map("printer_hardware")
+}
+
+model PrinterFirmware {
+  printerId    String  @id @map("printer_id") @db.VarChar(36)
+  name         String? @db.VarChar(255)
+  version      String? @db.VarChar(255)
+  buildDate    String? @map("build_date") @db.VarChar(255)
+  capabilities Json    @default("{}")
+  updatedAt    BigInt  @map("updated_at")
+
+  printer Printer @relation(fields: [printerId], references: [id], onDelete: Cascade)
+
+  @@index([name, version], map: "idx_name_version")
+  @@map("printer_firmware")
+}
+
+model PrinterPort {
+  printerId    String @id @map("printer_id") @db.VarChar(36)
+  usbVendorId  Int?   @map("usb_vendor_id")
+  usbProductId Int?   @map("usb_product_id")
+  portMetadata Json?  @map("port_metadata")
+  updatedAt    BigInt @map("updated_at")
+
+  printer Printer @relation(fields: [printerId], references: [id], onDelete: Cascade)
+
+  @@index([usbVendorId, usbProductId], map: "idx_usb_ids")
+  @@map("printer_ports")
+}
+
+model PrinterState {
+  printerId String  @id @map("printer_id") @db.VarChar(36)
+  status    String? @db.VarChar(100)
+  stateData Json?   @map("state_data")
+  updatedAt BigInt  @map("updated_at")
+
+  printer Printer @relation(fields: [printerId], references: [id], onDelete: Cascade)
+
+  @@map("printer_states")
+}
+
+model Command {
+  id            String  @id @db.VarChar(36)
+  printerId     String  @map("printer_id") @db.VarChar(36)
+  command       String  @db.Text
+  timestamp     BigInt
+  status        String  @default("pending") @db.VarChar(50)
+  error         String? @db.Text
+  response      String? @db.Text
+  executionTime Int?    @map("execution_time")
+
+  printer Printer @relation(fields: [printerId], references: [id], onDelete: Cascade)
+
+  @@index([printerId, timestamp(sort: Desc)], map: "idx_printer_timestamp")
+  @@index([status], map: "idx_status")
+  @@map("commands")
+}
+
+model Log {
+  id        String  @id @db.VarChar(36)
+  printerId String? @map("printer_id") @db.VarChar(36)
+  timestamp BigInt
+  level     String  @db.VarChar(20)
+  category  String  @db.VarChar(50)
+  message   String  @db.Text
+  data      Json?
+
+  printer Printer? @relation(fields: [printerId], references: [id], onDelete: Cascade)
+
+  @@index([printerId, timestamp(sort: Desc)], map: "idx_printer_timestamp")
+  @@index([level], map: "idx_level")
+  @@index([category], map: "idx_category")
+  @@index([timestamp(sort: Desc)], map: "idx_timestamp")
+  @@map("logs")
+}
+
+model PrinterStats {
+  printerId           String  @id @map("printer_id") @db.VarChar(36)
+  totalCommands       Int     @default(0) @map("total_commands")
+  successfulCommands  Int     @default(0) @map("successful_commands")
+  failedCommands      Int     @default(0) @map("failed_commands")
+  totalErrors         Int     @default(0) @map("total_errors")
+  totalConnectionTime BigInt  @default(0) @map("total_connection_time")
+  averageResponseTime Float   @default(0) @map("average_response_time")
+  lastActivity        BigInt? @map("last_activity")
+  statsData           Json?   @map("stats_data")
+  updatedAt           BigInt  @map("updated_at")
+
+  printer Printer @relation(fields: [printerId], references: [id], onDelete: Cascade)
+
+  @@map("printer_stats")
+}
+
+model PrinterEvent {
+  id        BigInt @id @default(autoincrement())
+  printerId String @map("printer_id") @db.VarChar(36)
+  eventType String @map("event_type") @db.VarChar(50)
+  eventData Json?  @map("event_data")
+  timestamp BigInt
+
+  printer Printer @relation(fields: [printerId], references: [id], onDelete: Cascade)
+
+  @@index([printerId, timestamp(sort: Desc)], map: "idx_printer_timestamp")
+  @@index([eventType], map: "idx_event_type")
+  @@map("printer_events")
+}
+
+model UserPrinterPreference {
+  userId       Int     @map("user_id")
+  printerId    String  @map("printer_id") @db.VarChar(36)
+  favorite     Boolean @default(false)
+  displayOrder Int     @default(0) @map("display_order")
+  customColor  String? @map("custom_color") @db.VarChar(7)
+  notes        String? @db.Text
+  preferences  Json?
+
+  printer Printer @relation(fields: [printerId], references: [id], onDelete: Cascade)
+
+  @@id([userId, printerId])
+  @@index([userId, favorite], map: "idx_user_favorite")
+  @@index([displayOrder], map: "idx_display_order")
+  @@map("user_printer_preferences")
+}
+
+// ==========================================
+// PARAMETER MODELS (EAV Pattern)
+// ==========================================
+
+model ParameterDefinition {
+  id            String  @id @db.VarChar(100)
+  parameterKey  String  @unique @map("parameter_key") @db.VarChar(100)
+  parameterType String  @map("parameter_type") @db.VarChar(20)
+  defaultValue  Json?   @map("default_value")
+  minValue      Float?  @map("min_value")
+  maxValue      Float?  @map("max_value")
+  category      String? @db.VarChar(50)
+  displayOrder  Int     @default(0) @map("display_order")
+  createdAt     BigInt  @map("created_at")
+  updatedAt     BigInt  @map("updated_at")
+
+  values PrinterParameter[]
+
+  @@index([category], map: "idx_category")
+  @@index([displayOrder], map: "idx_display_order")
+  @@map("parameter_definitions")
+}
+
+model PrinterParameter {
+  userId       Int    @map("user_id")
+  printerId    String @map("printer_id") @db.VarChar(36)
+  parameterId  String @map("parameter_id") @db.VarChar(100)
+  value        Json
+  updatedAt    BigInt @map("updated_at")
+
+  printer    Printer              @relation(fields: [printerId], references: [id], onDelete: Cascade)
+  definition ParameterDefinition  @relation(fields: [parameterId], references: [id], onDelete: Cascade)
+
+  @@id([userId, printerId, parameterId])
+  @@index([printerId], map: "idx_printer_id")
+  @@index([parameterId], map: "idx_parameter_id")
+  @@map("printer_parameters")
+}

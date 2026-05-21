@@ -1,0 +1,63 @@
+services:
+  mariadb:
+    image: mariadb:10.11.14
+    container_name: lineacnc-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: change_me_root
+      MARIADB_DATABASE: lineacnc
+      MARIADB_USER: lineacnc
+      MARIADB_PASSWORD: lineacncpassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-ulineacnc", "-plineacncpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 25s
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      args:
+        DB_HOST: mariadb
+        DB_PORT: 3306
+        DB_USER: lineacnc
+        DB_PASS: lineacncpassword
+        DB_NAME: lineacnc
+        SESSION_SECRET: change_me_session_secret
+    container_name: lineacnc-api
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    env_file:
+      - .env.docker
+    environment:
+      DB_HOST: mariadb
+      DB_PORT: 3306
+      NODE_ENV: production
+      PORT: 3000
+      CORS_ORIGIN: http://localhost:5173
+    ports:
+      - "3000:3000"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: http://localhost:3000/api
+    container_name: lineacnc-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "5173:5173"
+
+volumes:
+  mariadb_data:

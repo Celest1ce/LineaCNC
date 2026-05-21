@@ -1,0 +1,111 @@
+import { Link, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { useState, useEffect } from 'react';
+import { useAuth } from '../hooks/useAuth';
+import { useUserPreferences } from '../contexts/UserPreferencesContext';
+import { Logo } from './Logo';
+import { LanguageSelector } from './LanguageSelector';
+import { ProfileDropdown } from './ProfileDropdown';
+
+interface NavbarProps {
+  enableAutoHide?: boolean;
+}
+
+export function Navbar({ enableAutoHide = false }: NavbarProps) {
+  const { t } = useTranslation();
+  const { user } = useAuth();
+  const { preferences, setIsNavbarVisible } = useUserPreferences();
+  const location = useLocation();
+  const [isVisible, setIsVisible] = useState(true);
+
+  const isHomePage = location.pathname === '/';
+
+  // Activer l'auto-hide seulement si enableAutoHide est true ET que la préférence est activée
+  const shouldAutoHide = enableAutoHide && preferences.navbarAutoHide;
+
+  // Synchroniser isVisible avec le contexte global
+  useEffect(() => {
+    setIsNavbarVisible(isVisible);
+  }, [isVisible, setIsNavbarVisible]);
+
+  useEffect(() => {
+    if (!shouldAutoHide) {
+      setIsVisible(true);
+      return;
+    }
+
+    let hideTimeout: NodeJS.Timeout;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // Afficher la navbar si la souris est proche du bord supérieur (10px)
+      if (e.clientY < 10) {
+        setIsVisible(true);
+        clearTimeout(hideTimeout);
+      } else if (e.clientY > 100) {
+        // Cacher la navbar après un délai si la souris est loin du haut
+        clearTimeout(hideTimeout);
+        hideTimeout = setTimeout(() => {
+          setIsVisible(false);
+        }, 1000);
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+
+    // Cacher automatiquement au montage après 2 secondes
+    const initialHideTimeout = setTimeout(() => {
+      setIsVisible(false);
+    }, 2000);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      clearTimeout(hideTimeout);
+      clearTimeout(initialHideTimeout);
+    };
+  }, [shouldAutoHide]);
+
+  return (
+    <nav
+      className={`w-full bg-white ${shouldAutoHide ? 'fixed' : 'sticky'} top-0 z-50 transition-all duration-300 ease-in-out ${
+        shouldAutoHide && !isVisible ? '-translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100 border-b border-gray-200 shadow-sm'
+      }`}
+    >
+      <div className="w-full px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16">
+          {/* Logo */}
+          <Link
+            to={user ? "/dashboard" : "/"}
+            className="hover:opacity-80 transition-opacity"
+          >
+            <Logo size="md" onDark={false} />
+          </Link>
+
+          {/* Navigation Links */}
+          <div className="flex items-center space-x-4">
+            {!user && !isHomePage && (
+              <Link
+                to="/"
+                className="text-gray-700 hover:text-[#2563eb] transition-colors font-medium"
+              >
+                {t('nav.home')}
+              </Link>
+            )}
+
+            {user ? (
+              <ProfileDropdown />
+            ) : (
+              <>
+                <LanguageSelector variant="navbar" />
+                <Link to="/login">
+                  <button className="px-6 py-2 rounded-lg bg-[#2563eb] text-white hover:bg-[#1d4ed8] transition-all duration-200 font-semibold shadow-sm hover:shadow-md">
+                    {t('nav.login')}
+                  </button>
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </nav>
+  );
+}

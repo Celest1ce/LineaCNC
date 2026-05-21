@@ -1,0 +1,38 @@
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
+import { PrinterProvider } from './contexts/PrinterContext';
+import { UserPreferencesProvider } from './contexts/UserPreferencesContext';
+import { Home } from './routes/Home';
+import { Login } from './routes/Login';
+import { Register } from './routes/Register';
+import { Dashboard } from './routes/Dashboard';
+import { Profile } from './routes/Profile';
+import { PrinterControl } from './routes/PrinterControl';
+import { NotFound } from './routes/NotFound';
+import { ServerError } from './routes/ServerError';
+import './i18n';
+
+function App() {
+  return (
+    <BrowserRouter>
+      <UserPreferencesProvider>
+        <AuthProvider>
+          <PrinterProvider>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/control/:id" element={<PrinterControl />} />
+              <Route path="/500" element={<ServerError />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </PrinterProvider>
+        </AuthProvider>
+      </UserPreferencesProvider>
+    </BrowserRouter>
+  );
+}
+
+export default App;
