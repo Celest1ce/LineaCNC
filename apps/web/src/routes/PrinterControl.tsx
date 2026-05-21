@@ -3,7 +3,7 @@
  * Interface webapp pleine largeur avec graphiques temps réel
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -28,7 +28,7 @@ import {
 import { usePrinter } from '../contexts/PrinterContext';
 import { webSerial } from '../services/web-serial.service';
 import { apiService } from '../services/api.service';
-import { PrinterEvent, ParsedSerialData, ConnectionStatus } from '../types/printer';
+import { PrinterEvent, ParsedSerialData, ConnectionStatus, Printer } from '../types/printer';
 import { TemperatureChart } from '../components/Printer/TemperatureChart';
 import { TemperatureProfilesModal, TemperatureProfile } from '../components/Printer/TemperatureProfilesModal';
 import { ConsoleSidePanel } from '../components/Printer/ConsoleSidePanel';
@@ -58,14 +58,85 @@ interface ConsoleFilter {
   enabled: boolean;
 }
 
-export const PrinterControl: React.FC = () => {
+interface PrinterControlProps {
+  demoMode?: boolean;
+}
+
+export const PrinterControl: React.FC<PrinterControlProps> = ({ demoMode = false }) => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { printers, sendCommand, reconnectPrinter } = usePrinter();
 
-  const printer = printers.find(p => p.id === id);
-  const isConnected = printer?.connectionStatus === ConnectionStatus.CONNECTED;
+  const [demoState, setDemoState] = useState({
+    hotend: 209.2,
+    targetHotend: 210,
+    bed: 59.8,
+    targetBed: 60,
+    x: 138.72,
+    y: 96.5,
+    z: 0.28,
+    e: 241.31,
+  });
+
+  const demoPrinter = useMemo<Printer>(() => ({
+    id: 'demo-printer',
+    name: 'Printer Demo (Emulation)',
+    uuid: 'demo-printer-uuid',
+    config: {
+      id: 'demo-printer',
+      name: 'Printer Demo (Emulation)',
+      serialOptions: {
+        baudRate: 115200,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+        flowControl: 'none',
+        bufferSize: 8192,
+      },
+      autoReconnect: false,
+      reconnectDelay: 2000,
+      maxReconnectAttempts: 5,
+      commandTimeout: 30000,
+      keepAliveInterval: 60000,
+    },
+    hardware: {
+      machineName: 'Demo i3 MK4',
+      mainboard: 'STM32F407',
+      bedLeveling: 'AUTO_BILINEAR',
+      meshPoints: { x: 7, y: 7 },
+      printableArea: { x: 220, y: 220, z: 250 },
+    },
+    firmware: {
+      name: 'Marlin',
+      version: '2.1.3',
+      machineType: 'Cartesian',
+    },
+    state: {
+      temperature: {
+        hotend: demoState.hotend,
+        bed: demoState.bed,
+        targetHotend: demoState.targetHotend,
+        targetBed: demoState.targetBed,
+      },
+      position: {
+        x: demoState.x,
+        y: demoState.y,
+        z: demoState.z,
+        e: demoState.e,
+      },
+      status: 'Printing',
+      isHomed: true,
+      isPrinting: true,
+      progress: 42,
+    },
+    connectionStatus: ConnectionStatus.CONNECTED,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }), [demoState]);
+
+  const printer = demoMode ? demoPrinter : printers.find(p => p.id === id);
+  const isConnected = demoMode || printer?.connectionStatus === ConnectionStatus.CONNECTED;
 
   const [consoleEntries, setConsoleEntries] = useState<ConsoleEntry[]>([]);
   const [commandInput, setCommandInput] = useState('');
@@ -121,8 +192,38 @@ export const PrinterControl: React.FC = () => {
   const bedDropdownRef = useRef<HTMLDivElement>(null);
   const hasRequestedM990Ref = useRef(false);
 
+  useEffect(() => {
+    if (!demoMode) return;
+
+    const interval = setInterval(() => {
+      const s = Date.now() / 1000;
+      setDemoState(prev => ({
+        ...prev,
+        hotend: 209 + Math.sin(s / 3) * 1.8,
+        bed: 60 + Math.cos(s / 4) * 1.1,
+        x: 138 + Math.sin(s / 6) * 2,
+        y: 96 + Math.cos(s / 5) * 2,
+        e: prev.e + 0.03,
+      }));
+
+      setTemperatureData(prev => {
+        const nextPoint: TemperatureDataPoint = {
+          timestamp: Date.now(),
+          hotend: 209 + Math.sin(s / 3) * 1.8,
+          targetHotend: 210,
+          bed: 60 + Math.cos(s / 4) * 1.1,
+          targetBed: 60,
+        };
+        return [...prev.slice(-299), nextPoint];
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [demoMode]);
+
   // Charger les paramètres depuis l'API au montage
   useEffect(() => {
+    if (demoMode) return;
     if (!id) return;
 
     const loadParameters = async () => {
@@ -235,10 +336,11 @@ export const PrinterControl: React.FC = () => {
     };
 
     loadParameters();
-  }, [id]);
+  }, [id, demoMode]);
 
   // Sauvegarder les paramètres quand ils changent (avec debounce)
   useEffect(() => {
+    if (demoMode) return;
     if (!id || !parametersLoadedRef.current) {
       console.log('[useEffect consoleFilters] Saut de sauvegarde:', { id, loaded: parametersLoadedRef.current });
       return;
@@ -248,105 +350,118 @@ export const PrinterControl: React.FC = () => {
       saveParameter('console.filters', consoleFilters);
     }, 1000);
     return () => clearTimeout(timeoutId);
-  }, [consoleFilters, id]);
+  }, [consoleFilters, id, demoMode]);
 
   useEffect(() => {
+    if (demoMode) return;
     if (!id || !parametersLoadedRef.current) return;
     const timeoutId = setTimeout(() => {
       saveParameter('extrusion.feed_rate', extrusionFeedRate);
     }, 1000);
     return () => clearTimeout(timeoutId);
-  }, [extrusionFeedRate, id]);
+  }, [extrusionFeedRate, id, demoMode]);
 
   useEffect(() => {
+    if (demoMode) return;
     if (!id || !parametersLoadedRef.current) return;
     const timeoutId = setTimeout(() => {
       saveParameter('extrusion.min_temp', minExtrusionTemp);
     }, 1000);
     return () => clearTimeout(timeoutId);
-  }, [minExtrusionTemp, id]);
+  }, [minExtrusionTemp, id, demoMode]);
 
   useEffect(() => {
+    if (demoMode) return;
     if (!id || !parametersLoadedRef.current) return;
     const timeoutId = setTimeout(() => {
       saveParameter('movement.distance', moveDistance);
     }, 1000);
     return () => clearTimeout(timeoutId);
-  }, [moveDistance, id]);
+  }, [moveDistance, id, demoMode]);
 
   useEffect(() => {
+    if (demoMode) return;
     if (!id || !parametersLoadedRef.current) return;
     const timeoutId = setTimeout(() => {
       saveParameter('movement.feed_rate', feedRate);
     }, 1000);
     return () => clearTimeout(timeoutId);
-  }, [feedRate, id]);
+  }, [feedRate, id, demoMode]);
 
   useEffect(() => {
+    if (demoMode) return;
     if (!id || !parametersLoadedRef.current) return;
     const timeoutId = setTimeout(() => {
       saveParameter('extrusion.amount', extrudeAmount);
     }, 1000);
     return () => clearTimeout(timeoutId);
-  }, [extrudeAmount, id]);
+  }, [extrudeAmount, id, demoMode]);
 
   useEffect(() => {
+    if (demoMode) return;
     if (!id || !parametersLoadedRef.current) return;
     const timeoutId = setTimeout(() => {
       saveParameter('temperature.hotend_target', targetHotend);
     }, 1000);
     return () => clearTimeout(timeoutId);
-  }, [targetHotend, id]);
+  }, [targetHotend, id, demoMode]);
 
   useEffect(() => {
+    if (demoMode) return;
     if (!id || !parametersLoadedRef.current) return;
     const timeoutId = setTimeout(() => {
       saveParameter('temperature.bed_target', targetBed);
     }, 1000);
     return () => clearTimeout(timeoutId);
-  }, [targetBed, id]);
+  }, [targetBed, id, demoMode]);
 
   useEffect(() => {
+    if (demoMode) return;
     if (!id || !parametersLoadedRef.current) return;
     const timeoutId = setTimeout(() => {
       saveParameter('print_area.x', printAreaX);
     }, 1000);
     return () => clearTimeout(timeoutId);
-  }, [printAreaX, id]);
+  }, [printAreaX, id, demoMode]);
 
   useEffect(() => {
+    if (demoMode) return;
     if (!id || !parametersLoadedRef.current) return;
     const timeoutId = setTimeout(() => {
       saveParameter('print_area.y', printAreaY);
     }, 1000);
     return () => clearTimeout(timeoutId);
-  }, [printAreaY, id]);
+  }, [printAreaY, id, demoMode]);
 
   useEffect(() => {
+    if (demoMode) return;
     if (!id || !parametersLoadedRef.current) return;
     const timeoutId = setTimeout(() => {
       saveParameter('print_area.z', printAreaZ);
     }, 1000);
     return () => clearTimeout(timeoutId);
-  }, [printAreaZ, id]);
+  }, [printAreaZ, id, demoMode]);
 
   useEffect(() => {
+    if (demoMode) return;
     if (!id || !parametersLoadedRef.current) return;
     const timeoutId = setTimeout(() => {
       saveParameter('temperature.profiles', temperatureProfiles);
     }, 1000);
     return () => clearTimeout(timeoutId);
-  }, [temperatureProfiles, id]);
+  }, [temperatureProfiles, id, demoMode]);
 
   // Redirection si l'imprimante n'existe pas ou n'est pas connectée
   useEffect(() => {
+    if (demoMode) return;
     if (!id) {
       navigate('/dashboard');
     }
-  }, [id, navigate]);
+  }, [id, navigate, demoMode]);
 
   // Redirection si déconnecté (après un délai pour laisser le temps à la reconnexion)
   useEffect(() => {
+    if (demoMode) return;
     if (!printer) return;
 
     if (!isConnected) {
@@ -358,10 +473,11 @@ export const PrinterControl: React.FC = () => {
 
       return () => clearTimeout(timeoutId);
     }
-  }, [printer, isConnected, navigate]);
+  }, [printer, isConnected, navigate, demoMode]);
 
   // Envoyer M990 à la première connexion pour récupérer les dimensions de la zone d'impression
   useEffect(() => {
+    if (demoMode) return;
     if (!printer || !isConnected || !id) return;
 
     // Envoyer M990 seulement si on ne l'a pas encore fait pour cette session
@@ -372,10 +488,11 @@ export const PrinterControl: React.FC = () => {
         console.error('[M990] Erreur lors de l\'envoi de M990:', error);
       });
     }
-  }, [printer, isConnected, id, sendCommand]);
+  }, [printer, isConnected, id, sendCommand, demoMode]);
 
   // Activer le reporting automatique de température et position (Marlin M155 et M154)
   useEffect(() => {
+    if (demoMode) return;
     if (!printer || !isConnected) return;
 
     // Activer l'auto-report de température toutes les 2 secondes
@@ -397,10 +514,11 @@ export const PrinterControl: React.FC = () => {
         console.error('Failed to disable position auto-report:', err);
       });
     };
-  }, [printer?.id, isConnected, sendCommand]);
+  }, [printer?.id, isConnected, sendCommand, demoMode]);
 
   // Écouter les événements de l'imprimante et mettre à jour le graphique
   useEffect(() => {
+    if (demoMode) return;
     if (!printer) return;
 
     const unsubscribe = webSerial.on(PrinterEvent.DATA_RECEIVED, payload => {
@@ -446,7 +564,7 @@ export const PrinterControl: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [printer?.id]);
+  }, [printer?.id, demoMode]);
 
   // Fermer les dropdowns au clic extérieur
   useEffect(() => {
@@ -465,6 +583,7 @@ export const PrinterControl: React.FC = () => {
 
   // Fonction utilitaire pour sauvegarder un paramètre
   const saveParameter = async (parameterKey: string, value: any) => {
+    if (demoMode) return;
     if (!id) {
       console.warn('[saveParameter] No printer ID');
       return;
@@ -546,6 +665,18 @@ export const PrinterControl: React.FC = () => {
   const handleSendCommand = async (command: string) => {
     if (!printer || !isConnected || !command.trim()) return;
 
+    if (demoMode) {
+      addConsoleEntry({ type: 'command', text: `> ${command}` });
+      setTimeout(() => {
+        addConsoleEntry({
+          type: 'response',
+          text: `ok (demo) command accepted: ${command}`,
+        });
+      }, 200);
+      setCommandInput('');
+      return;
+    }
+
     addConsoleEntry({ type: 'command', text: `> ${command}` });
 
     try {
@@ -623,6 +754,15 @@ export const PrinterControl: React.FC = () => {
 
   const handleSetTemperature = (type: 'hotend' | 'bed') => {
     if (!isConnected) return;
+    if (demoMode) {
+      if (type === 'hotend') {
+        setDemoState(prev => ({ ...prev, targetHotend }));
+      } else {
+        setDemoState(prev => ({ ...prev, targetBed }));
+      }
+      addConsoleEntry({ type: 'response', text: `ok (demo) set ${type} target` });
+      return;
+    }
     const temp = type === 'hotend' ? targetHotend : targetBed;
     const command = type === 'hotend' ? `M104 S${temp}` : `M140 S${temp}`;
     handleSendCommand(command);
@@ -635,6 +775,10 @@ export const PrinterControl: React.FC = () => {
 
   const handleSetFanSpeed = (speed: number) => {
     if (!isConnected) return;
+    if (demoMode) {
+      addConsoleEntry({ type: 'response', text: `ok (demo) fan speed set to ${speed}%` });
+      return;
+    }
     // Convertir le pourcentage (0-100) en valeur PWM (0-255)
     const pwmValue = Math.round((speed / 100) * 255);
     // Si la vitesse est 0, utiliser M107 pour éteindre, sinon M106
