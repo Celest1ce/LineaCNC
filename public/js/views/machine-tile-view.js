@@ -34,7 +34,8 @@ const MACHINE_TILE_ICONS = {
         'M15 12a3 3 0 11-6 0 3 3 0 016 0z'
     ],
     console: ['M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'],
-    trash: ['M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16']
+    trash: ['M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16'],
+    info: ['M13 16h-1v-4h1m0-4h-1m1-4a9 9 0 11-2 17.81A9 9 0 0112 3z']
 };
 
 class MachineTileView {
@@ -127,6 +128,13 @@ class MachineTileView {
             onClick: () => this.callbacks.onEdit?.(machine.id)
         }));
 
+        actions.appendChild(this.createIconButton({
+            title: 'Informations',
+            icon: this.createIcon(MACHINE_TILE_ICONS.info, 'h-3 w-3'),
+            className: 'p-1 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors',
+            onClick: () => this.callbacks.onViewInfo?.(machine.id)
+        }));
+
         if (machine.status === 'ready') {
             actions.appendChild(this.createIconButton({
                 title: 'Console Serial',
@@ -165,6 +173,20 @@ class MachineTileView {
         );
 
         details.appendChild(activityRow);
+
+        const infoRow = this.createElement('div', 'flex items-center justify-between');
+        infoRow.append(
+            this.createElement('span', 'text-xs font-medium text-gray-700 dark:text-gray-300', 'Infos :'),
+            this.createElement(
+                'span',
+                'text-xs text-gray-500 dark:text-gray-400',
+                machine.lastInfoSync
+                    ? this.formatTime(typeof machine.lastInfoSync === 'string' ? new Date(machine.lastInfoSync) : machine.lastInfoSync)
+                    : 'Jamais'
+            )
+        );
+
+        details.appendChild(infoRow);
 
         if (machine.uuid) {
             const uuidSection = this.createElement('div', 'mt-2 pt-2 border-t border-gray-200 dark:border-gray-800');

@@ -1,4 +1,1898 @@
 /**
+ * LineaCNC - Bundle JavaScript
+ * Généré le 2025-11-08T23:03:24.458Z
+ */
+
+// === config.js ===
+/**
+ * Configuration centralisée de l'application JavaScript
+ */
+window.LineaCNC = window.LineaCNC || {};
+
+window.LineaCNC.config = {
+    // Version de l'application
+    version: '1.0.0',
+    
+    // Mode debug
+    debug: false,
+    
+    // Configuration de l'API
+    api: {
+        baseUrl: '/api',
+        timeout: 10000,
+        retries: 3
+    },
+    
+    // Configuration de l'interface utilisateur
+    ui: {
+        animationDuration: 300,
+        notificationDuration: 3000,
+        dropdownAnimationDuration: 200,
+        machineUpdateInterval: 5000
+    },
+    
+    // Configuration des machines CNC
+    machines: {
+        maxMachines: 10,
+        defaultBaudRate: 115200,
+        connectionTimeout: 5000,
+        supportedBaudRates: [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
+    },
+    
+    // Configuration des notifications
+    notifications: {
+        maxVisible: 5,
+        position: 'top-right',
+        autoClose: true,
+        showCloseButton: true
+    },
+    
+    // Configuration des dropdowns
+    dropdowns: {
+        closeOnEscape: true,
+        closeOnOutsideClick: true,
+        animationEnabled: true
+    },
+    
+    // Configuration des thèmes
+    themes: {
+        current: 'light',
+        available: ['light', 'dark'],
+        autoDetect: true
+    },
+    
+    // Configuration des performances
+    performance: {
+        enableLazyLoading: true,
+        enableVirtualScrolling: false,
+        maxRenderItems: 100,
+        debounceDelay: 300
+    },
+    
+    // Configuration de sécurité
+    security: {
+        enableCSP: true,
+        sanitizeInputs: true,
+        validateUrls: true
+    }
+};
+
+/**
+ * Fonction pour obtenir une valeur de configuration
+ * @param {string} path - Chemin vers la configuration (ex: 'ui.animationDuration')
+ * @param {*} defaultValue - Valeur par défaut si non trouvée
+ * @returns {*} Valeur de configuration
+ */
+window.LineaCNC.getConfig = function(path, defaultValue = null) {
+    const keys = path.split('.');
+    let value = this.config;
+    
+    for (const key of keys) {
+        if (value && typeof value === 'object' && key in value) {
+            value = value[key];
+        } else {
+            return defaultValue;
+        }
+    }
+    
+    return value;
+};
+
+/**
+ * Fonction pour définir une valeur de configuration
+ * @param {string} path - Chemin vers la configuration
+ * @param {*} value - Nouvelle valeur
+ */
+window.LineaCNC.setConfig = function(path, value) {
+    const keys = path.split('.');
+    const lastKey = keys.pop();
+    let target = this.config;
+    
+    for (const key of keys) {
+        if (!target[key] || typeof target[key] !== 'object') {
+            target[key] = {};
+        }
+        target = target[key];
+    }
+    
+    target[lastKey] = value;
+};
+
+/**
+ * Fonction pour réinitialiser la configuration
+ */
+window.LineaCNC.resetConfig = function() {
+    // Recharger la configuration par défaut
+    location.reload();
+};
+
+// Configuration spécifique à l'environnement
+if (typeof window !== 'undefined') {
+    // Détection de l'environnement
+    const isDevelopment = window.location.hostname === 'localhost' || 
+                         window.location.hostname === '127.0.0.1' ||
+                         window.location.hostname.includes('dev');
+    
+    if (isDevelopment) {
+        window.LineaCNC.config.debug = true;
+        window.LineaCNC.config.api.timeout = 30000;
+        console.log('🔧 Mode développement activé');
+    }
+    
+    // Détection des capacités du navigateur
+    window.LineaCNC.capabilities = {
+        webSerial: 'serial' in navigator,
+        notifications: 'Notification' in window,
+        clipboard: 'clipboard' in navigator,
+        localStorage: 'localStorage' in window,
+        sessionStorage: 'sessionStorage' in window,
+        webWorkers: 'Worker' in window,
+        serviceWorkers: 'serviceWorker' in navigator
+    };
+    
+    // Configuration adaptative basée sur les capacités
+    if (!window.LineaCNC.capabilities.webSerial) {
+        console.warn('⚠️ Web Serial API non supportée');
+    }
+    
+    if (!window.LineaCNC.capabilities.notifications) {
+        window.LineaCNC.config.notifications.enableBrowserNotifications = false;
+    }
+}
+
+// Export pour les modules
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = window.LineaCNC;
+}
+
+
+// === utils/notification.js ===
+/**
+ * Gestionnaire de notifications
+ */
+class NotificationManager {
+    constructor() {
+        this.container = this.createContainer();
+    }
+
+    /**
+     * Crée le conteneur des notifications
+     */
+    createContainer() {
+        let container = document.getElementById('notification-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'notification-container';
+            container.className = 'fixed top-4 right-4 left-4 sm:left-auto sm:max-w-sm z-50 space-y-2 pointer-events-none';
+            document.body.appendChild(container);
+        }
+        return container;
+    }
+
+    /**
+     * Affiche une notification
+     * @param {string} message - Message à afficher
+     * @param {string} type - Type de notification (success, error, info, warning)
+     * @param {number} duration - Durée d'affichage en ms (défaut: 3000)
+     */
+    show(message, type = 'info', duration = 3000) {
+        // Limiter le nombre de notifications visibles
+        this.limitVisibleNotifications();
+
+        const notification = this.createNotification(message, type);
+        this.container.appendChild(notification);
+
+        // Animation d'entrée
+        setTimeout(() => {
+            notification.classList.add('opacity-100', 'translate-x-0');
+        }, 10);
+
+        // Suppression automatique
+        if (duration > 0) {
+            setTimeout(() => {
+                this.hide(notification);
+            }, duration);
+        }
+
+        return notification;
+    }
+
+    /**
+     * Limite le nombre de notifications visibles (max 3)
+     */
+    limitVisibleNotifications() {
+        const notifications = this.container.querySelectorAll('.transform');
+        const maxNotifications = 3;
+        
+        if (notifications.length >= maxNotifications) {
+            // Supprimer les notifications les plus anciennes
+            const notificationsToRemove = notifications.length - maxNotifications + 1;
+            for (let i = 0; i < notificationsToRemove; i++) {
+                this.hide(notifications[i]);
+            }
+        }
+    }
+
+    /**
+     * Crée l'élément de notification
+     */
+    createNotification(message, type) {
+        const notification = document.createElement('div');
+        notification.className = `transform transition-all duration-300 ease-in-out opacity-0 translate-x-full max-w-full w-full bg-white shadow-lg rounded-lg pointer-events-auto ring-1 ring-black ring-opacity-5 overflow-hidden`;
+
+        const colors = {
+            success: 'border-l-4 border-green-400 bg-green-50',
+            error: 'border-l-4 border-red-400 bg-red-50',
+            warning: 'border-l-4 border-yellow-400 bg-yellow-50',
+            info: 'border-l-4 border-blue-400 bg-blue-50'
+        };
+
+        const icons = {
+            success: `<svg class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+            </svg>`,
+            error: `<svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+            </svg>`,
+            warning: `<svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.725-1.36 3.49 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+            </svg>`,
+            info: `<svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+            </svg>`
+        };
+
+        notification.innerHTML = `
+            <div class="p-4 ${colors[type]}">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        ${icons[type]}
+                    </div>
+                    <div class="ml-3 w-0 flex-1">
+                        <p class="text-sm font-medium text-gray-900 break-words">
+                            ${message}
+                        </p>
+                    </div>
+                    <div class="ml-4 flex-shrink-0 flex">
+                        <button class="bg-white rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" onclick="notificationManager.hide(this.closest('.transform'))">
+                            <span class="sr-only">Fermer</span>
+                            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        return notification;
+    }
+
+    /**
+     * Masque une notification
+     */
+    hide(notification) {
+        notification.classList.remove('opacity-100', 'translate-x-0');
+        notification.classList.add('opacity-0', 'translate-x-full');
+        
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 300);
+    }
+
+    /**
+     * Masque toutes les notifications
+     */
+    hideAll() {
+        const notifications = this.container.querySelectorAll('.transform');
+        notifications.forEach(notification => this.hide(notification));
+    }
+}
+
+// Instance globale
+const notificationManager = new NotificationManager();
+
+
+// === utils/theme-manager.js ===
+/**
+ * Gestionnaire de thème (Mode clair, sombre, automatique)
+ */
+class ThemeManager {
+    constructor() {
+        this.currentTheme = 'auto';
+        this.init();
+    }
+
+    init() {
+        // Charger le thème sauvegardé
+        this.loadTheme();
+        
+        // Appliquer le thème
+        this.applyTheme();
+        
+        // Attendre que le DOM soit chargé pour bind les events
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                this.bindEvents();
+                this.updateButtons();
+            });
+        } else {
+            this.bindEvents();
+            this.updateButtons();
+        }
+        
+        // Vérifier l'heure toutes les minutes pour le mode auto
+        setInterval(() => this.checkAutoTheme(), 60000);
+    }
+
+    bindEvents() {
+        // Boutons de sélection de thème
+        const themeButtons = document.querySelectorAll('.theme-btn');
+        themeButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const theme = e.currentTarget.dataset.theme;
+                this.setTheme(theme);
+            });
+        });
+    }
+
+    loadTheme() {
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme && ['light', 'dark', 'auto'].includes(savedTheme)) {
+            this.currentTheme = savedTheme;
+        }
+    }
+
+    setTheme(theme) {
+        this.currentTheme = theme;
+        localStorage.setItem('theme', theme);
+        this.applyTheme();
+        this.updateButtons();
+    }
+
+    applyTheme() {
+        const html = document.documentElement;
+        
+        if (this.currentTheme === 'auto') {
+            // Mode automatique : sombre de 20h à 7h
+            const hour = new Date().getHours();
+            if (hour >= 20 || hour < 7) {
+                html.classList.add('dark');
+            } else {
+                html.classList.remove('dark');
+            }
+        } else if (this.currentTheme === 'dark') {
+            html.classList.add('dark');
+        } else {
+            html.classList.remove('dark');
+        }
+    }
+
+    checkAutoTheme() {
+        if (this.currentTheme === 'auto') {
+            this.applyTheme();
+        }
+    }
+
+    updateButtons() {
+        const buttons = document.querySelectorAll('.theme-btn');
+        buttons.forEach(btn => {
+            const theme = btn.dataset.theme;
+            const span = btn.querySelector('span');
+            const svg = btn.querySelector('svg');
+            
+            if (theme === this.currentTheme) {
+                // Bouton sélectionné
+                btn.classList.add('bg-blue-50', 'dark:bg-blue-900', 'border', 'border-blue-300', 'dark:border-blue-700');
+                btn.classList.remove('hover:bg-gray-100');
+                span.classList.add('text-blue-600', 'dark:text-blue-300', 'font-semibold');
+                span.classList.remove('text-gray-600');
+            } else {
+                // Bouton non sélectionné
+                btn.classList.remove('bg-blue-50', 'dark:bg-blue-900', 'border', 'border-blue-300', 'dark:border-blue-700');
+                btn.classList.add('hover:bg-gray-100', 'dark:hover:bg-gray-700');
+                span.classList.remove('text-blue-600', 'dark:text-blue-300', 'font-semibold');
+                span.classList.add('text-gray-600', 'dark:text-gray-400');
+            }
+        });
+    }
+}
+
+// Créer une instance globale
+const themeManager = new ThemeManager();
+
+
+
+// === components/password-tools.js ===
+(function () {
+    'use strict';
+
+    const PASSWORD_TOGGLE_LABELS = {
+        show: 'Afficher le mot de passe',
+        hide: 'Masquer le mot de passe'
+    };
+
+    const REQUIREMENT_CHECKS = [
+        {
+            key: 'length',
+            test: (value) => value.length >= 10
+        },
+        {
+            key: 'uppercase',
+            test: (value) => /[A-Z]/.test(value)
+        },
+        {
+            key: 'lowercase',
+            test: (value) => /[a-z]/.test(value)
+        },
+        {
+            key: 'number',
+            test: (value) => /[0-9]/.test(value)
+        },
+        {
+            key: 'special',
+            test: (value) => /[^A-Za-z0-9]/.test(value)
+        }
+    ];
+
+    function updateIcons(container, isActive) {
+        const activeIcon = container.querySelector('[data-icon-active]');
+        const inactiveIcon = container.querySelector('[data-icon-inactive]');
+
+        if (activeIcon) {
+            activeIcon.classList.toggle('hidden', !isActive);
+        }
+
+        if (inactiveIcon) {
+            inactiveIcon.classList.toggle('hidden', isActive);
+        }
+    }
+
+    function updateRequirementClasses(element, isValid) {
+        element.classList.toggle('text-green-600', isValid);
+        element.classList.toggle('text-gray-600', !isValid);
+    }
+
+    function initPasswordVisibility() {
+        const fields = document.querySelectorAll('[data-password-field]');
+
+        fields.forEach((field) => {
+            const input = field.querySelector('[data-password-input]');
+            const toggle = field.querySelector('[data-password-toggle]');
+
+            if (!input || !toggle) {
+                return;
+            }
+
+            const showIcon = toggle.querySelector('[data-icon-show]');
+            const hideIcon = toggle.querySelector('[data-icon-hide]');
+            const label = toggle.querySelector('[data-password-toggle-label]');
+
+            toggle.addEventListener('click', () => {
+                const shouldReveal = input.type === 'password';
+                input.type = shouldReveal ? 'text' : 'password';
+                toggle.setAttribute('aria-pressed', shouldReveal ? 'true' : 'false');
+
+                const labelText = shouldReveal ? PASSWORD_TOGGLE_LABELS.hide : PASSWORD_TOGGLE_LABELS.show;
+                toggle.setAttribute('aria-label', labelText);
+                if (label) {
+                    label.textContent = labelText;
+                }
+
+                if (showIcon) {
+                    showIcon.classList.toggle('hidden', shouldReveal);
+                }
+
+                if (hideIcon) {
+                    hideIcon.classList.toggle('hidden', !shouldReveal);
+                }
+            });
+        });
+    }
+
+    function initPasswordSecurity() {
+        const passwordInput = document.querySelector('[data-password-strength]');
+
+        if (!passwordInput) {
+            return;
+        }
+
+        const confirmInput = document.querySelector('[data-password-confirm]');
+        const requirementsContainer = document.querySelector('[data-password-requirements]');
+        const matchIndicator = document.querySelector('[data-password-match]');
+
+        function updateRequirements(value) {
+            if (!requirementsContainer) {
+                return;
+            }
+
+            REQUIREMENT_CHECKS.forEach(({ key, test }) => {
+                const item = requirementsContainer.querySelector(`[data-requirement="${key}"]`);
+                if (!item) {
+                    return;
+                }
+
+                const isValid = test(value);
+                updateRequirementClasses(item, isValid);
+                updateIcons(item, isValid);
+            });
+        }
+
+        function updateMatchIndicator() {
+            if (!confirmInput || !matchIndicator) {
+                return;
+            }
+
+            const passwordsMatch = confirmInput.value.length > 0 && confirmInput.value === passwordInput.value;
+            updateRequirementClasses(matchIndicator, passwordsMatch);
+            updateIcons(matchIndicator, passwordsMatch);
+        }
+
+        passwordInput.addEventListener('input', () => {
+            updateRequirements(passwordInput.value);
+            updateMatchIndicator();
+        });
+
+        if (confirmInput) {
+            confirmInput.addEventListener('input', updateMatchIndicator);
+        }
+
+        updateRequirements(passwordInput.value);
+        updateMatchIndicator();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        window.LineaCNC = window.LineaCNC || {};
+        initPasswordVisibility();
+        initPasswordSecurity();
+    });
+})();
+
+
+// === components/dropdown-manager.js ===
+/**
+ * Gestionnaire des dropdowns
+ */
+class DropdownManager {
+    constructor() {
+        this.activeDropdown = null;
+        this.activeTrigger = null;
+        this.dropdownKeydownHandler = this.handleDropdownKeydown.bind(this);
+        this.focusInHandler = this.handleFocusIn.bind(this);
+        this.init();
+    }
+
+    init() {
+        this.bindEvents();
+    }
+
+    bindEvents() {
+        // Gestion du dropdown des outils
+        this.setupToggle('toolsButton', 'toolsDropdown');
+        this.setupToggle('settingsButton', 'settingsDropdown');
+
+        // Fermer les dropdowns en cliquant à l'extérieur
+        document.addEventListener('click', (e) => {
+            if (
+                this.activeDropdown &&
+                !this.activeDropdown.contains(e.target) &&
+                (!this.activeTrigger || !this.activeTrigger.contains(e.target))
+            ) {
+                this.closeDropdown(this.activeDropdown, { restoreFocus: false });
+            }
+        });
+
+        // Gestion des touches clavier
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.activeDropdown) {
+                this.closeDropdown(this.activeDropdown);
+            }
+        });
+    }
+
+    setupToggle(buttonId, dropdownId) {
+        const button = document.getElementById(buttonId);
+        const dropdown = document.getElementById(dropdownId);
+
+        if (!button || !dropdown) return;
+
+        button.setAttribute('aria-expanded', 'false');
+
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.toggleDropdown(dropdown, button);
+        });
+
+        button.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                this.openDropdown(dropdown, button, { focusFirst: true });
+            }
+        });
+    }
+
+    toggleDropdown(dropdown, trigger) {
+        if (this.activeDropdown === dropdown) {
+            this.closeDropdown(dropdown);
+        } else {
+            this.closeAllDropdowns();
+            this.openDropdown(dropdown, trigger, { focusFirst: true });
+        }
+    }
+
+    openDropdown(dropdown, trigger, { focusFirst = false } = {}) {
+        dropdown.classList.remove('hidden');
+        this.activeDropdown = dropdown;
+        this.activeTrigger = trigger || null;
+
+        if (this.activeTrigger) {
+            this.activeTrigger.setAttribute('aria-expanded', 'true');
+        }
+
+        dropdown.setAttribute('aria-hidden', 'false');
+        dropdown.addEventListener('keydown', this.dropdownKeydownHandler);
+        document.addEventListener('focusin', this.focusInHandler);
+
+        // Animation d'ouverture
+        dropdown.style.opacity = '0';
+        dropdown.style.transform = 'translateY(-10px)';
+
+        requestAnimationFrame(() => {
+            dropdown.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+            dropdown.style.opacity = '1';
+            dropdown.style.transform = 'translateY(0)';
+        });
+
+        if (focusFirst) {
+            const items = this.getFocusableItems(dropdown);
+            if (items.length > 0) {
+                items[0].focus();
+            }
+        }
+    }
+
+    closeDropdown(dropdown, { restoreFocus = true } = {}) {
+        if (!dropdown) return;
+
+        // Animation de fermeture
+        dropdown.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+        dropdown.style.opacity = '0';
+        dropdown.style.transform = 'translateY(-10px)';
+
+        setTimeout(() => {
+            dropdown.classList.add('hidden');
+            dropdown.style.transition = '';
+            dropdown.style.opacity = '';
+            dropdown.style.transform = '';
+
+            if (this.activeDropdown === dropdown) {
+                this.activeDropdown = null;
+                if (this.activeTrigger) {
+                    this.activeTrigger.setAttribute('aria-expanded', 'false');
+                }
+                dropdown.setAttribute('aria-hidden', 'true');
+                dropdown.removeEventListener('keydown', this.dropdownKeydownHandler);
+                document.removeEventListener('focusin', this.focusInHandler);
+
+                if (restoreFocus && this.activeTrigger) {
+                    this.activeTrigger.focus();
+                }
+
+                this.activeTrigger = null;
+            }
+        }, 200);
+    }
+
+    closeAllDropdowns() {
+        const dropdowns = document.querySelectorAll('[id$="Dropdown"]');
+        dropdowns.forEach(dropdown => {
+            if (!dropdown.classList.contains('hidden')) {
+                this.closeDropdown(dropdown);
+            }
+        });
+    }
+
+    getFocusableItems(dropdown) {
+        return Array.from(
+            dropdown.querySelectorAll(
+                'a[href], button:not([disabled]), [role="menuitem"], [tabindex]:not([tabindex="-1"])'
+            )
+        ).filter((el) => !el.hasAttribute('disabled'));
+    }
+
+    handleDropdownKeydown(event) {
+        if (!this.activeDropdown) return;
+
+        const items = this.getFocusableItems(this.activeDropdown);
+        if (items.length === 0) return;
+
+        const currentIndex = items.indexOf(document.activeElement);
+
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % items.length;
+            items[nextIndex].focus();
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            const prevIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
+            items[prevIndex].focus();
+        } else if (event.key === 'Home') {
+            event.preventDefault();
+            items[0].focus();
+        } else if (event.key === 'End') {
+            event.preventDefault();
+            items[items.length - 1].focus();
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            this.closeDropdown(this.activeDropdown);
+        } else if (event.key === 'Tab') {
+            // Fermer le menu quand on tabule en dehors
+            this.closeDropdown(this.activeDropdown, { restoreFocus: false });
+        }
+    }
+
+    handleFocusIn(event) {
+        if (
+            !this.activeDropdown ||
+            this.activeDropdown.contains(event.target) ||
+            (this.activeTrigger && this.activeTrigger.contains(event.target))
+        ) {
+            return;
+        }
+
+        this.closeDropdown(this.activeDropdown, { restoreFocus: false });
+    }
+}
+
+// Instance globale
+const dropdownManager = new DropdownManager();
+
+
+// === views/machine-tile-view.js ===
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+const MACHINE_TILE_STATUS_META = {
+    connected: {
+        label: 'Connectée',
+        badgeClass: 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900'
+    },
+    connecting: {
+        label: 'Connexion...',
+        badgeClass: 'text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900'
+    },
+    retrieving: {
+        label: 'Récupération des informations...',
+        badgeClass: 'text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900'
+    },
+    ready: {
+        label: 'Prête',
+        badgeClass: 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900'
+    },
+    disconnected: {
+        label: 'Non connecté',
+        badgeClass: 'text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800'
+    },
+    error: {
+        label: 'Erreur',
+        badgeClass: 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900'
+    }
+};
+
+const MACHINE_TILE_ICONS = {
+    machine: ['M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z'],
+    settings: [
+        'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 01.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
+        'M15 12a3 3 0 11-6 0 3 3 0 016 0z'
+    ],
+    console: ['M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'],
+    trash: ['M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16'],
+    info: ['M13 16h-1v-4h1m0-4h-1m1-4a9 9 0 11-2 17.81A9 9 0 0112 3z']
+};
+
+class MachineTileView {
+    constructor({ containerId = 'machinesGrid', emptyStateId = 'noMachinesMessage' } = {}) {
+        this.containerId = containerId;
+        this.emptyStateId = emptyStateId;
+        this.callbacks = {};
+    }
+
+    setCallbacks(callbacks = {}) {
+        this.callbacks = { ...this.callbacks, ...callbacks };
+    }
+
+    render(machines) {
+        const grid = document.getElementById(this.containerId);
+        const noMachinesMessage = document.getElementById(this.emptyStateId);
+
+        if (!grid) return;
+
+        grid.innerHTML = '';
+
+        const list = machines instanceof Map
+            ? Array.from(machines.values())
+            : Array.isArray(machines)
+                ? machines
+                : [];
+
+        if (list.length === 0) {
+            if (noMachinesMessage) {
+                noMachinesMessage.classList.remove('hidden');
+            }
+            return;
+        }
+
+        if (noMachinesMessage) {
+            noMachinesMessage.classList.add('hidden');
+        }
+
+        const fragment = document.createDocumentFragment();
+
+        list.forEach((machine) => {
+            fragment.appendChild(this.createMachineTile(machine));
+        });
+
+        grid.appendChild(fragment);
+    }
+
+    createMachineTile(machine) {
+        const tile = this.createElement('div', 'card p-4 flex flex-col gap-3 hover:shadow-lg transition-shadow duration-200');
+
+        tile.append(
+            this.buildTileHeader(machine),
+            this.buildTileDetails(machine)
+        );
+
+        const footer = this.buildTileFooter(machine);
+        if (footer) {
+            tile.appendChild(footer);
+        }
+
+        return tile;
+    }
+
+    buildTileHeader(machine) {
+        const header = this.createElement('div', 'flex items-start justify-between gap-3');
+
+        const identity = this.createElement('div', 'flex items-start gap-2');
+        const iconWrapper = this.createElement('div', 'p-1.5 bg-blue-100 text-blue-600 rounded-lg dark:bg-blue-900/40 dark:text-blue-300');
+        iconWrapper.appendChild(this.createIcon(MACHINE_TILE_ICONS.machine, 'h-4 w-4'));
+        identity.appendChild(iconWrapper);
+
+        const info = this.createElement('div', 'min-w-0');
+        info.append(
+            this.createElement('h3', 'text-sm font-semibold text-gray-900 dark:text-gray-100 truncate', machine.name),
+            this.createElement('p', 'text-xs text-gray-500 dark:text-gray-400', `${machine.baudRate} baud`)
+        );
+        identity.appendChild(info);
+
+        header.appendChild(identity);
+
+        const status = MACHINE_TILE_STATUS_META[machine.status] || MACHINE_TILE_STATUS_META.disconnected;
+        const badge = this.createElement('span', `px-2 py-1 text-xs font-semibold rounded-full ${status.badgeClass}`, status.label);
+
+        const actions = this.createElement('div', 'flex items-center gap-1');
+
+        actions.appendChild(this.createIconButton({
+            title: 'Paramètres',
+            icon: this.createIcon(MACHINE_TILE_ICONS.settings, 'h-3 w-3'),
+            className: 'p-1 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors',
+            onClick: () => this.callbacks.onEdit?.(machine.id)
+        }));
+
+        actions.appendChild(this.createIconButton({
+            title: 'Informations',
+            icon: this.createIcon(MACHINE_TILE_ICONS.info, 'h-3 w-3'),
+            className: 'p-1 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors',
+            onClick: () => this.callbacks.onViewInfo?.(machine.id)
+        }));
+
+        if (machine.status === 'ready') {
+            actions.appendChild(this.createIconButton({
+                title: 'Console Serial',
+                icon: this.createIcon(MACHINE_TILE_ICONS.console, 'h-3 w-3'),
+                className: 'p-1 text-gray-500 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-400 transition-colors',
+                onClick: () => this.callbacks.onOpenConsole?.(machine.id)
+            }));
+        }
+
+        actions.appendChild(this.createIconButton({
+            title: 'Supprimer',
+            icon: this.createIcon(MACHINE_TILE_ICONS.trash, 'h-3 w-3'),
+            className: 'p-1 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors',
+            onClick: () => this.callbacks.onDelete?.(machine.id)
+        }));
+
+        const rightSide = this.createElement('div', 'flex items-start gap-2');
+        rightSide.appendChild(badge);
+        rightSide.appendChild(actions);
+        header.appendChild(rightSide);
+
+        return header;
+    }
+
+    buildTileDetails(machine) {
+        const details = this.createElement('div', 'space-y-2');
+
+        const activityRow = this.createElement('div', 'flex items-center justify-between');
+        activityRow.append(
+            this.createElement('span', 'text-xs font-medium text-gray-700 dark:text-gray-300', 'Activité :'),
+            this.createElement(
+                'span',
+                'text-xs text-gray-500 dark:text-gray-400',
+                machine.lastSeen ? this.formatTime(typeof machine.lastSeen === 'string' ? new Date(machine.lastSeen) : machine.lastSeen) : '—'
+            )
+        );
+
+        details.appendChild(activityRow);
+
+        const infoRow = this.createElement('div', 'flex items-center justify-between');
+        infoRow.append(
+            this.createElement('span', 'text-xs font-medium text-gray-700 dark:text-gray-300', 'Infos :'),
+            this.createElement(
+                'span',
+                'text-xs text-gray-500 dark:text-gray-400',
+                machine.lastInfoSync
+                    ? this.formatTime(typeof machine.lastInfoSync === 'string' ? new Date(machine.lastInfoSync) : machine.lastInfoSync)
+                    : 'Jamais'
+            )
+        );
+
+        details.appendChild(infoRow);
+
+        if (machine.uuid) {
+            const uuidSection = this.createElement('div', 'mt-2 pt-2 border-t border-gray-200 dark:border-gray-800');
+            const uuidBox = this.createElement('div', 'rounded-lg bg-gray-100 px-2 py-1.5 dark:bg-gray-900');
+            uuidBox.append(
+                this.createElement('div', 'text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5', 'UUID Firmware'),
+                this.createElement('div', 'text-xs font-mono text-gray-800 break-all dark:text-gray-200', machine.uuid)
+            );
+            uuidSection.appendChild(uuidBox);
+            details.appendChild(uuidSection);
+        }
+
+        return details;
+    }
+
+    buildTileFooter(machine) {
+        const base = this.createElement('div', 'mt-3 pt-3 border-t border-gray-200 dark:border-gray-800');
+
+        if (machine.status === 'ready') {
+            const actions = this.createElement('div', 'flex gap-2');
+            const disconnectBtn = this.createFooterButton('Déconnecter', 'secondary', () => this.callbacks.onDisconnect?.(machine.id));
+            disconnectBtn.classList.add('flex-1');
+            const controlBtn = this.createFooterButton('Contrôler', 'primary');
+            controlBtn.classList.add('flex-1');
+            actions.append(disconnectBtn, controlBtn);
+            base.appendChild(actions);
+            return base;
+        }
+
+        if (machine.status === 'disconnected') {
+            const action = machine.needsAuthorization
+                ? () => this.callbacks.onAuthorize?.(machine.id)
+                : () => this.callbacks.onConnect?.(machine.id);
+            const connectBtn = this.createFooterButton(
+                machine.needsAuthorization ? 'Autoriser le port' : 'Connecter',
+                'primary',
+                action
+            );
+            connectBtn.classList.add('w-full');
+            base.appendChild(connectBtn);
+            return base;
+        }
+
+        if (machine.status === 'connecting' || machine.status === 'retrieving') {
+            const message = machine.status === 'connecting' ? 'Connexion en cours...' : 'Récupération des informations...';
+            base.appendChild(this.createElement('div', 'w-full text-center text-xs py-1.5 text-gray-500 dark:text-gray-400', message));
+            return base;
+        }
+
+        if (machine.status === 'error') {
+            const action = machine.lastError === 'NotAllowedError'
+                ? () => this.callbacks.onAuthorize?.(machine.id)
+                : () => this.callbacks.onRetry?.(machine.id);
+            const retryBtn = this.createFooterButton(
+                machine.lastError === 'NotAllowedError' ? 'Autoriser le port' : 'Réessayer',
+                'primary',
+                action
+            );
+            retryBtn.classList.add('w-full');
+            base.appendChild(retryBtn);
+            return base;
+        }
+
+        return null;
+    }
+
+    createIconButton({ title, icon, className, onClick }) {
+        const button = this.createElement('button', className);
+        button.type = 'button';
+        button.title = title;
+        button.appendChild(icon);
+        if (onClick) {
+            button.addEventListener('click', onClick);
+        }
+        return button;
+    }
+
+    createFooterButton(label, variant, onClick) {
+        const variantClass = variant === 'secondary' ? 'btn-secondary' : 'btn-primary';
+        const button = this.createElement('button', `${variantClass} text-xs py-1.5 rounded-lg`);
+        button.type = 'button';
+        button.textContent = label;
+        if (onClick) {
+            button.addEventListener('click', onClick);
+        }
+        return button;
+    }
+
+    createIcon(paths, size) {
+        const svg = document.createElementNS(SVG_NS, 'svg');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('class', size);
+
+        paths.forEach((d) => {
+            const path = document.createElementNS(SVG_NS, 'path');
+            path.setAttribute('d', d);
+            path.setAttribute('stroke-linecap', 'round');
+            path.setAttribute('stroke-linejoin', 'round');
+            path.setAttribute('stroke-width', '2');
+            svg.appendChild(path);
+        });
+
+        return svg;
+    }
+
+    createElement(tag, className, textContent) {
+        const element = document.createElement(tag);
+        if (className) {
+            element.className = className;
+        }
+        if (typeof textContent === 'string') {
+            element.textContent = textContent;
+        }
+        return element;
+    }
+
+    formatTime(date) {
+        if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+            return 'Jamais';
+        }
+
+        const now = new Date();
+        const diff = now - date;
+        const minutes = Math.floor(diff / 60000);
+
+        if (minutes < 1) return "À l'instant";
+        if (minutes < 60) return `Il y a ${minutes}min`;
+
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `Il y a ${hours}h`;
+
+        return date.toLocaleDateString('fr-FR');
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.MachineTileView = MachineTileView;
+}
+
+
+
+// === views/machine-manager-view.js ===
+const DEFAULT_IDS = {
+    addMachineBtn: 'addMachineBtn',
+    machineModal: 'machineModal',
+    machineForm: 'machineForm',
+    machineName: 'machineName',
+    machineBaudRate: 'machineBaudRate',
+    closeModal: 'closeModal',
+    cancelModal: 'cancelBtn',
+    baudrateDropdownBtn: 'baudrateDropdownBtn',
+    baudrateDropdown: 'baudrateDropdown',
+    consoleModal: 'consoleModal',
+    closeConsoleModal: 'closeConsoleModal',
+    sendConsoleBtn: 'sendConsoleBtn',
+    consoleInput: 'consoleInput',
+    consoleOutput: 'consoleOutput',
+    machineInfoModal: 'machineInfoModal',
+    closeMachineInfoModal: 'closeMachineInfoModal',
+    refreshMachineInfo: 'refreshMachineInfo',
+    machineInfoLastSync: 'machineInfoLastSync',
+    machineInfoCommands: 'machineInfoCommands',
+    machineInfoLoader: 'machineInfoLoader',
+    machineInfoError: 'machineInfoError',
+    machineInfoEmpty: 'machineInfoEmpty',
+    machineInfoContent: 'machineInfoContent',
+    machineInfoRefreshStatus: 'machineInfoRefreshStatus',
+    machineInfoTitle: 'machineInfoTitle',
+    serialSupportMessage: 'serialSupportMessage',
+    deleteMachineModal: 'deleteMachineModal',
+    closeDeleteMachineModal: 'closeDeleteMachineModal',
+    cancelDeleteMachine: 'cancelDeleteMachine',
+    confirmDeleteMachine: 'confirmDeleteMachine',
+    deleteMachineName: 'deleteMachineName',
+    machineBaudRateError: 'machineBaudRateError'
+};
+
+class MachineManagerView {
+    constructor(customIds = {}) {
+        this.ids = { ...DEFAULT_IDS, ...customIds };
+        this.callbacks = {};
+        this.documentClickHandler = this.handleDocumentClick.bind(this);
+        this.boundModalKeydown = this.handleModalKeydown.bind(this);
+        this.boundFocusIn = this.restrictFocusToModal.bind(this);
+        this.activeModal = null;
+        this.focusableElements = [];
+        this.previouslyFocusedElement = null;
+        this.cacheElements();
+        this.bindEvents();
+        this.updateSerialCapability();
+    }
+
+    cacheElements() {
+        this.elements = {
+            addMachineBtn: document.getElementById(this.ids.addMachineBtn),
+            machineModal: document.getElementById(this.ids.machineModal),
+            machineForm: document.getElementById(this.ids.machineForm),
+            machineName: document.getElementById(this.ids.machineName),
+            machineBaudRate: document.getElementById(this.ids.machineBaudRate),
+            closeModal: document.getElementById(this.ids.closeModal),
+            cancelModal: document.getElementById(this.ids.cancelModal),
+            baudrateDropdownBtn: document.getElementById(this.ids.baudrateDropdownBtn),
+            baudrateDropdown: document.getElementById(this.ids.baudrateDropdown),
+            baudrateOptions: Array.from(document.querySelectorAll('.baudrate-option')),
+            consoleModal: document.getElementById(this.ids.consoleModal),
+            closeConsoleModal: document.getElementById(this.ids.closeConsoleModal),
+            sendConsoleBtn: document.getElementById(this.ids.sendConsoleBtn),
+            consoleInput: document.getElementById(this.ids.consoleInput),
+            consoleOutput: document.getElementById(this.ids.consoleOutput),
+            machineInfoModal: document.getElementById(this.ids.machineInfoModal),
+            closeMachineInfoModal: document.getElementById(this.ids.closeMachineInfoModal),
+            refreshMachineInfo: document.getElementById(this.ids.refreshMachineInfo),
+            machineInfoLastSync: document.getElementById(this.ids.machineInfoLastSync),
+            machineInfoCommands: document.getElementById(this.ids.machineInfoCommands),
+            machineInfoLoader: document.getElementById(this.ids.machineInfoLoader),
+            machineInfoError: document.getElementById(this.ids.machineInfoError),
+            machineInfoEmpty: document.getElementById(this.ids.machineInfoEmpty),
+            machineInfoContent: document.getElementById(this.ids.machineInfoContent),
+            machineInfoRefreshStatus: document.getElementById(this.ids.machineInfoRefreshStatus),
+            machineInfoTitle: document.getElementById(this.ids.machineInfoTitle),
+            machineInfoCommandsInput: document.getElementById('machineInfoCommands'),
+            serialSupportMessage: document.getElementById(this.ids.serialSupportMessage),
+            deleteMachineModal: document.getElementById(this.ids.deleteMachineModal),
+            closeDeleteMachineModal: document.getElementById(this.ids.closeDeleteMachineModal),
+            cancelDeleteMachine: document.getElementById(this.ids.cancelDeleteMachine),
+            confirmDeleteMachine: document.getElementById(this.ids.confirmDeleteMachine),
+            deleteMachineName: document.getElementById(this.ids.deleteMachineName),
+            machineBaudRateError: document.getElementById(this.ids.machineBaudRateError)
+        };
+    }
+
+    setCallbacks(callbacks = {}) {
+        this.callbacks = { ...this.callbacks, ...callbacks };
+    }
+
+    bindEvents() {
+        const {
+            addMachineBtn,
+            machineModal,
+            machineForm,
+            closeModal,
+            cancelModal,
+            baudrateDropdownBtn,
+            baudrateOptions,
+            machineBaudRate,
+            consoleModal,
+            closeConsoleModal,
+            sendConsoleBtn,
+            consoleInput,
+            machineInfoModal,
+            closeMachineInfoModal,
+            refreshMachineInfo
+        } = this.elements;
+
+        if (addMachineBtn) {
+            addMachineBtn.addEventListener('click', () => {
+                if (addMachineBtn.disabled) {
+                    return;
+                }
+                this.callbacks.onRequestAddMachine?.();
+            });
+        }
+
+        if (closeModal) {
+            closeModal.addEventListener('click', () => this.closeMachineModal());
+        }
+
+        if (cancelModal) {
+            cancelModal.addEventListener('click', () => this.closeMachineModal());
+        }
+
+        if (machineModal) {
+            machineModal.addEventListener('click', (event) => {
+                if (event.target === machineModal) {
+                    this.closeMachineModal();
+                }
+            });
+        }
+
+        if (machineForm) {
+            machineForm.addEventListener('submit', (event) => {
+                event.preventDefault();
+                const data = this.getFormData();
+                this.callbacks.onMachineFormSubmit?.(data);
+            });
+        }
+
+        if (baudrateDropdownBtn) {
+            baudrateDropdownBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                this.toggleBaudrateDropdown();
+            });
+        }
+
+        if (Array.isArray(baudrateOptions)) {
+            baudrateOptions.forEach((button) => {
+                button.addEventListener('click', (event) => {
+                    const value = event.currentTarget.getAttribute('data-baudrate');
+                    this.setBaudrateValue(value);
+                    this.validateBaudrateInput(value);
+                    this.callbacks.onBaudratePresetSelected?.(value);
+                    this.hideBaudrateDropdown();
+                });
+            });
+        }
+
+        document.addEventListener('click', this.documentClickHandler);
+
+        if (machineBaudRate) {
+            ['input', 'blur'].forEach((eventName) => {
+                machineBaudRate.addEventListener(eventName, (event) => {
+                    this.validateBaudrateInput(event.target.value);
+                    this.callbacks.onBaudrateInput?.(event.target.value);
+                });
+            });
+        }
+
+        if (closeConsoleModal) {
+            closeConsoleModal.addEventListener('click', () => this.closeConsoleModal());
+        }
+
+        if (consoleModal) {
+            consoleModal.addEventListener('click', (event) => {
+                if (event.target === consoleModal) {
+                    this.closeConsoleModal();
+                }
+            });
+        }
+
+        if (sendConsoleBtn) {
+            sendConsoleBtn.addEventListener('click', () => {
+                const command = this.getConsoleInputValue();
+                this.callbacks.onConsoleSend?.(command);
+            });
+        }
+
+        if (consoleInput) {
+            consoleInput.addEventListener('keydown', (event) => {
+                if (event.ctrlKey && event.key === 'Enter') {
+                    event.preventDefault();
+                    const command = this.getConsoleInputValue();
+                    this.callbacks.onConsoleSend?.(command);
+                } else if (event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    this.callbacks.onConsoleNavigate?.('up');
+                } else if (event.key === 'ArrowDown') {
+                    event.preventDefault();
+                    this.callbacks.onConsoleNavigate?.('down');
+                }
+            });
+        }
+
+        if (closeMachineInfoModal) {
+            closeMachineInfoModal.addEventListener('click', () => this.closeInfoModal());
+        }
+
+        if (machineInfoModal) {
+            machineInfoModal.addEventListener('click', (event) => {
+                if (event.target === machineInfoModal) {
+                    this.closeInfoModal();
+                }
+            });
+        }
+
+        if (refreshMachineInfo) {
+            refreshMachineInfo.addEventListener('click', () => {
+                if (refreshMachineInfo.disabled) {
+                    return;
+                }
+                this.callbacks.onInfoRefresh?.();
+            });
+        }
+
+        if (this.elements.deleteMachineModal) {
+            this.elements.deleteMachineModal.addEventListener('click', (event) => {
+                if (event.target === this.elements.deleteMachineModal) {
+                    this.closeDeleteModal();
+                }
+            });
+        }
+
+        if (this.elements.closeDeleteMachineModal) {
+            this.elements.closeDeleteMachineModal.addEventListener('click', () => this.closeDeleteModal());
+        }
+
+        if (this.elements.cancelDeleteMachine) {
+            this.elements.cancelDeleteMachine.addEventListener('click', () => this.handleDeleteCancelled());
+        }
+
+        if (this.elements.confirmDeleteMachine) {
+            this.elements.confirmDeleteMachine.addEventListener('click', () => {
+                this.callbacks.onDeleteConfirmed?.();
+            });
+        }
+    }
+
+    toggleBaudrateDropdown() {
+        const dropdown = this.elements.baudrateDropdown;
+        if (!dropdown) return;
+
+        if (dropdown.classList.contains('hidden')) {
+            dropdown.classList.remove('hidden');
+            dropdown.classList.add('show');
+        } else {
+            this.hideBaudrateDropdown();
+        }
+    }
+
+    hideBaudrateDropdown() {
+        const dropdown = this.elements.baudrateDropdown;
+        if (!dropdown) return;
+        dropdown.classList.add('hidden');
+        dropdown.classList.remove('show');
+    }
+
+    handleDocumentClick(event) {
+        const { baudrateDropdown, baudrateDropdownBtn } = this.elements;
+        if (!baudrateDropdown) return;
+
+        const clickedInsideDropdown = baudrateDropdown.contains(event.target);
+        const clickedButton = baudrateDropdownBtn?.contains(event.target);
+
+        if (!clickedInsideDropdown && !clickedButton) {
+            this.hideBaudrateDropdown();
+        }
+    }
+
+    getFormData() {
+        const name = this.elements.machineName?.value?.trim() || '';
+        const baudRateValue = parseInt(this.elements.machineBaudRate?.value, 10);
+        const commandsRaw = this.elements.machineInfoCommandsInput?.value || '';
+        const infoCommands = commandsRaw
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line, index, array) => line.length > 0 && array.indexOf(line) === index);
+        return {
+            name,
+            baudRate: Number.isNaN(baudRateValue) ? null : baudRateValue,
+            infoCommands
+        };
+    }
+
+    showMachineModal({ name, baudRate, infoCommands } = {}) {
+        const { machineModal, machineName } = this.elements;
+        if (!machineModal) return;
+
+        this.setMachineNameValue(name || '');
+        this.setBaudrateValue(baudRate || '');
+        this.validateBaudrateInput(this.elements.machineBaudRate?.value);
+        if (this.elements.machineInfoCommandsInput) {
+            const commandsValue = Array.isArray(infoCommands) && infoCommands.length
+                ? infoCommands.join('\n')
+                : '';
+            this.elements.machineInfoCommandsInput.value = commandsValue;
+        }
+        this.openModal(machineModal, machineName);
+    }
+
+    closeMachineModal() {
+        const { machineModal } = this.elements;
+        if (!machineModal) return;
+        this.closeModal(machineModal);
+        this.callbacks.onMachineModalClosed?.();
+    }
+
+    focusMachineName() {
+        const { machineName } = this.elements;
+        if (machineName) {
+            machineName.focus();
+        }
+    }
+
+    setMachineNameValue(value) {
+        if (this.elements.machineName) {
+            this.elements.machineName.value = value;
+        }
+    }
+
+    setBaudrateValue(value) {
+        if (this.elements.machineBaudRate) {
+            this.elements.machineBaudRate.value = value;
+            this.clearBaudrateError();
+        }
+    }
+
+    clearBaudrateError() {
+        const { machineBaudRate, machineBaudRateError } = this.elements;
+        if (machineBaudRateError) {
+            machineBaudRateError.textContent = '';
+            machineBaudRateError.classList.add('hidden');
+        }
+        if (machineBaudRate) {
+            machineBaudRate.removeAttribute('aria-invalid');
+            machineBaudRate.style.borderColor = '';
+            machineBaudRate.style.backgroundColor = '';
+        }
+    }
+
+    validateBaudrateInput(value) {
+        const input = this.elements.machineBaudRate;
+        const errorEl = this.elements.machineBaudRateError;
+        if (!input) return;
+
+        const numericValue = parseInt(value, 10);
+        const isValid = !Number.isNaN(numericValue) && numericValue >= 1200 && numericValue <= 20000000;
+
+        if (isValid) {
+            input.removeAttribute('aria-invalid');
+            input.style.borderColor = '';
+            input.style.backgroundColor = '';
+            if (errorEl) {
+                errorEl.textContent = '';
+                errorEl.classList.add('hidden');
+            }
+        } else {
+            input.setAttribute('aria-invalid', 'true');
+            input.style.borderColor = '#EF4444';
+            input.style.backgroundColor = '#FEF2F2';
+            if (errorEl) {
+                errorEl.textContent = 'Entrez une valeur comprise entre 1200 et 20000000 baud.';
+                errorEl.classList.remove('hidden');
+            }
+        }
+    }
+
+    showConsoleModal() {
+        const { consoleModal, consoleInput } = this.elements;
+        if (!consoleModal) return;
+
+        this.resetConsoleOutput();
+        this.openModal(consoleModal, consoleInput);
+    }
+
+    closeConsoleModal() {
+        const { consoleModal } = this.elements;
+        if (!consoleModal) return;
+        this.closeModal(consoleModal);
+        this.callbacks.onConsoleClosed?.();
+    }
+
+    resetConsoleOutput() {
+        const { consoleOutput } = this.elements;
+        if (!consoleOutput) return;
+        consoleOutput.innerHTML = '<div class="text-gray-500 dark:text-gray-400">Console ouverte. En attente de données...</div>';
+    }
+
+    showInfoModal({ machineName, lastSyncLabel, commands } = {}) {
+        const { machineInfoModal, refreshMachineInfo } = this.elements;
+        if (!machineInfoModal) return;
+
+        this.updateInfoMeta({ machineName, lastSyncLabel, commands });
+        this.clearInfoModalError();
+        this.hideInfoEmptyState();
+        if (this.elements.machineInfoContent) {
+            this.elements.machineInfoContent.innerHTML = '';
+        }
+
+        this.setInfoModalLoading(true);
+        this.setInfoRefreshState(false);
+        this.openModal(machineInfoModal, refreshMachineInfo);
+    }
+
+    closeInfoModal() {
+        const { machineInfoModal } = this.elements;
+        if (!machineInfoModal) return;
+        this.setInfoRefreshState(false);
+        this.closeModal(machineInfoModal);
+        this.callbacks.onInfoModalClosed?.();
+    }
+
+    setInfoModalLoading(isLoading) {
+        if (this.elements.machineInfoLoader) {
+            this.elements.machineInfoLoader.classList.toggle('hidden', !isLoading);
+        }
+        if (this.elements.machineInfoContent) {
+            this.elements.machineInfoContent.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+            if (isLoading) {
+                this.elements.machineInfoContent.classList.add('opacity-50');
+            } else {
+                this.elements.machineInfoContent.classList.remove('opacity-50');
+            }
+        }
+    }
+
+    setInfoRefreshState(isRefreshing) {
+        const { refreshMachineInfo, machineInfoRefreshStatus } = this.elements;
+        if (refreshMachineInfo) {
+            refreshMachineInfo.disabled = !!isRefreshing;
+            refreshMachineInfo.classList.toggle('opacity-60', !!isRefreshing);
+            refreshMachineInfo.classList.toggle('cursor-not-allowed', !!isRefreshing);
+        }
+        if (machineInfoRefreshStatus) {
+            machineInfoRefreshStatus.classList.toggle('hidden', !isRefreshing);
+        }
+    }
+
+    setInfoModalError(message) {
+        if (!this.elements.machineInfoError) {
+            return;
+        }
+        if (message) {
+            this.elements.machineInfoError.textContent = message;
+            this.elements.machineInfoError.classList.remove('hidden');
+        } else {
+            this.clearInfoModalError();
+        }
+    }
+
+    clearInfoModalError() {
+        if (!this.elements.machineInfoError) {
+            return;
+        }
+        this.elements.machineInfoError.textContent = '';
+        this.elements.machineInfoError.classList.add('hidden');
+    }
+
+    showInfoEmptyState() {
+        if (this.elements.machineInfoEmpty) {
+            this.elements.machineInfoEmpty.classList.remove('hidden');
+        }
+    }
+
+    hideInfoEmptyState() {
+        if (this.elements.machineInfoEmpty) {
+            this.elements.machineInfoEmpty.classList.add('hidden');
+        }
+    }
+
+    renderInfoModalContent(commandResults = []) {
+        const { machineInfoContent } = this.elements;
+        if (!machineInfoContent) return;
+
+        machineInfoContent.innerHTML = '';
+
+        if (!Array.isArray(commandResults) || commandResults.length === 0) {
+            this.showInfoEmptyState();
+            return;
+        }
+
+        this.hideInfoEmptyState();
+
+        commandResults.forEach((result) => {
+            const section = document.createElement('div');
+            section.className = 'rounded-lg border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/40 p-4 space-y-3';
+
+            const header = document.createElement('div');
+            header.className = 'flex flex-wrap items-center justify-between gap-2';
+
+            const title = document.createElement('h4');
+            title.className = 'text-sm font-semibold text-gray-900 dark:text-gray-100';
+            title.textContent = result?.command || 'Commande';
+            header.appendChild(title);
+
+            if (result?.capturedAt) {
+                const date = new Date(result.capturedAt);
+                if (!Number.isNaN(date.getTime())) {
+                    const dateEl = document.createElement('span');
+                    dateEl.className = 'text-xs text-gray-500 dark:text-gray-400';
+                    dateEl.textContent = date.toLocaleString('fr-FR');
+                    header.appendChild(dateEl);
+                }
+            }
+
+            section.appendChild(header);
+
+            if (Array.isArray(result?.entries) && result.entries.length > 0) {
+                const grid = document.createElement('div');
+                grid.className = 'grid grid-cols-1 sm:grid-cols-2 gap-3';
+
+                result.entries.forEach((entry) => {
+                    const card = document.createElement('div');
+                    card.className = 'rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3';
+
+                    const label = document.createElement('div');
+                    label.className = 'text-xs font-semibold text-gray-700 dark:text-gray-200';
+                    label.textContent = entry?.label || 'Paramètre';
+                    card.appendChild(label);
+
+                    if (entry?.parameter?.name) {
+                        const normalized = document.createElement('div');
+                        normalized.className = 'text-[11px] uppercase tracking-wide text-gray-400 dark:text-gray-500';
+                        normalized.textContent = entry.parameter.name;
+                        card.appendChild(normalized);
+                    }
+
+                    const valueContainer = document.createElement('div');
+                    valueContainer.className = 'mt-1 max-h-40 overflow-auto rounded bg-gray-100/70 px-2 py-1 text-sm text-gray-900 dark:bg-gray-900/40 dark:text-gray-100';
+
+                    const value = document.createElement('pre');
+                    value.className = 'whitespace-pre-wrap break-words font-sans text-sm';
+                    const hasValue = entry?.value !== undefined && entry.value !== null && String(entry.value).trim().length > 0;
+                    value.textContent = hasValue ? String(entry.value) : '—';
+
+                    valueContainer.appendChild(value);
+                    card.appendChild(valueContainer);
+
+                    grid.appendChild(card);
+                });
+
+                section.appendChild(grid);
+            } else {
+                const empty = document.createElement('p');
+                empty.className = 'text-xs text-gray-500 dark:text-gray-400';
+                empty.textContent = 'Aucune donnée détaillée pour cette commande.';
+                section.appendChild(empty);
+            }
+
+            if (result?.rawOutput) {
+                const details = document.createElement('details');
+                details.className = 'rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 px-3 py-2 text-xs text-gray-600 dark:text-gray-300';
+
+                const summary = document.createElement('summary');
+                summary.className = 'cursor-pointer text-xs font-medium text-blue-600 dark:text-blue-400';
+                summary.textContent = 'Voir la réponse brute';
+                details.appendChild(summary);
+
+                const pre = document.createElement('pre');
+                pre.className = 'mt-2 whitespace-pre-wrap break-words text-[11px] text-gray-600 dark:text-gray-300';
+                pre.textContent = result.rawOutput;
+                details.appendChild(pre);
+
+                section.appendChild(details);
+            }
+
+            machineInfoContent.appendChild(section);
+        });
+    }
+
+    updateInfoMeta({ machineName, lastSyncLabel, commands } = {}) {
+        if (this.elements.machineInfoTitle) {
+            const baseTitle = 'Informations machine';
+            this.elements.machineInfoTitle.textContent = machineName
+                ? `${baseTitle} · ${machineName}`
+                : baseTitle;
+        }
+        if (this.elements.machineInfoLastSync) {
+            this.elements.machineInfoLastSync.textContent = lastSyncLabel || 'Jamais';
+        }
+        if (this.elements.machineInfoCommands) {
+            if (Array.isArray(commands) && commands.length > 0) {
+                this.elements.machineInfoCommands.textContent = commands.join(' · ');
+            } else if (typeof commands === 'string' && commands.trim().length > 0) {
+                this.elements.machineInfoCommands.textContent = commands.trim();
+            } else {
+                this.elements.machineInfoCommands.textContent = '—';
+            }
+        }
+    }
+
+    appendToConsole(text, colorClass = 'text-green-400') {
+        const { consoleOutput } = this.elements;
+        if (!consoleOutput) return;
+        const line = document.createElement('div');
+        line.className = colorClass;
+        line.textContent = text;
+        consoleOutput.appendChild(line);
+        consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    }
+
+    getConsoleInputValue() {
+        const value = this.elements.consoleInput?.value || '';
+        return value.trim();
+    }
+
+    setConsoleInputValue(value) {
+        if (this.elements.consoleInput) {
+            this.elements.consoleInput.value = value;
+        }
+    }
+
+    clearConsoleInput() {
+        if (this.elements.consoleInput) {
+            this.elements.consoleInput.value = '';
+        }
+    }
+
+    focusConsoleInput() {
+        if (this.elements.consoleInput) {
+            this.elements.consoleInput.focus();
+        }
+    }
+
+    showDeleteModal({ name } = {}) {
+        const { deleteMachineModal } = this.elements;
+        if (!deleteMachineModal) return;
+
+        this.setDeleteMachineName(name || 'cette machine');
+        this.openModal(deleteMachineModal, this.elements.confirmDeleteMachine);
+    }
+
+    closeDeleteModal() {
+        const { deleteMachineModal } = this.elements;
+        if (!deleteMachineModal) return;
+        this.closeModal(deleteMachineModal);
+    }
+
+    handleDeleteCancelled() {
+        this.closeDeleteModal();
+        this.callbacks.onDeleteCancelled?.();
+    }
+
+    setDeleteMachineName(name) {
+        if (this.elements.deleteMachineName) {
+            this.elements.deleteMachineName.textContent = name;
+        }
+    }
+
+    updateSerialCapability() {
+        const { addMachineBtn, serialSupportMessage } = this.elements;
+        const supported = typeof navigator !== 'undefined' && 'serial' in navigator;
+
+        if (addMachineBtn) {
+            addMachineBtn.disabled = !supported;
+            if (supported) {
+                addMachineBtn.removeAttribute('aria-disabled');
+                addMachineBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            } else {
+                addMachineBtn.setAttribute('aria-disabled', 'true');
+                addMachineBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+        }
+
+        if (serialSupportMessage) {
+            serialSupportMessage.classList.toggle('hidden', supported);
+        }
+    }
+
+    openModal(modal, initialFocusElement) {
+        if (!modal) return;
+
+        this.previouslyFocusedElement = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+
+        modal.classList.remove('hidden');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('overflow-hidden');
+        this.activeModal = modal;
+        this.focusableElements = this.getFocusableElements(modal);
+
+        const initialFocus = initialFocusElement && typeof initialFocusElement.focus === 'function'
+            ? initialFocusElement
+            : this.focusableElements[0];
+
+        (initialFocus || modal).focus();
+
+        modal.addEventListener('keydown', this.boundModalKeydown);
+        document.addEventListener('focusin', this.boundFocusIn);
+    }
+
+    closeModal(modal) {
+        if (!modal) return;
+
+        modal.classList.add('hidden');
+        modal.setAttribute('aria-hidden', 'true');
+
+        if (this.activeModal === modal) {
+            modal.removeEventListener('keydown', this.boundModalKeydown);
+            document.removeEventListener('focusin', this.boundFocusIn);
+            document.body.classList.remove('overflow-hidden');
+            this.activeModal = null;
+            this.focusableElements = [];
+
+            if (this.previouslyFocusedElement && typeof this.previouslyFocusedElement.focus === 'function') {
+                this.previouslyFocusedElement.focus();
+            }
+            this.previouslyFocusedElement = null;
+        }
+    }
+
+    handleModalKeydown(event) {
+        if (!this.activeModal) return;
+
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            if (this.activeModal === this.elements.machineModal) {
+                this.closeMachineModal();
+            } else if (this.activeModal === this.elements.consoleModal) {
+                this.closeConsoleModal();
+            } else if (this.activeModal === this.elements.machineInfoModal) {
+                this.closeInfoModal();
+            } else if (this.activeModal === this.elements.deleteMachineModal) {
+                this.closeDeleteModal();
+            }
+            return;
+        }
+
+        if (event.key !== 'Tab' || this.focusableElements.length === 0) {
+            return;
+        }
+
+        const first = this.focusableElements[0];
+        const last = this.focusableElements[this.focusableElements.length - 1];
+
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    }
+
+    restrictFocusToModal(event) {
+        if (!this.activeModal || this.activeModal.contains(event.target)) {
+            return;
+        }
+
+        const first = this.focusableElements[0];
+        (first || this.activeModal).focus();
+    }
+
+    getFocusableElements(container) {
+        if (!container) return [];
+        return Array.from(
+            container.querySelectorAll(
+                'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            )
+        ).filter((element) => element.offsetParent !== null);
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.MachineManagerView = MachineManagerView;
+}
+
+
+
+// === components/machine-manager.js ===
+/**
  * Gestionnaire des machines CNC
  */
 const DEFAULT_INFO_COMMANDS = ['M990'];
@@ -2219,4 +4113,281 @@ class MachineManager {
         this.tileView.render(this.machines);
     }
 
+}
+
+
+// === pages/dashboard.js ===
+/**
+ * Page Dashboard - Logique principale
+ */
+class DashboardPage {
+    constructor() {
+        this.machineManager = null;
+        this.init();
+    }
+
+    init() {
+        // Attendre que le DOM soit chargé
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => this.setup());
+        } else {
+            this.setup();
+        }
+    }
+
+    setup() {
+        this.initializeMachineManager();
+        this.setupEventListeners();
+    }
+
+    initializeMachineManager() {
+        // Vérifier si les éléments nécessaires existent
+        const machinesGrid = document.getElementById('machinesGrid');
+        const addMachineBtn = document.getElementById('addMachineBtn');
+        
+        if (machinesGrid || addMachineBtn) {
+            this.machineManager = new MachineManager();
+            // Exposer globalement pour les attributs onclick dans le HTML
+            window.machineManager = this.machineManager;
+        }
+    }
+
+    setupEventListeners() {
+        // Événements spécifiques à la page dashboard
+        this.setupKeyboardShortcuts();
+        this.setupPageVisibility();
+    }
+
+    setupKeyboardShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            // Ctrl/Cmd + N : Ajouter une machine
+            if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+                e.preventDefault();
+                if (this.machineManager) {
+                    this.machineManager.addMachine();
+                }
+            }
+            
+            // Échap : Fermer les modals
+            if (e.key === 'Escape') {
+                const modal = document.getElementById('machineModal');
+                const consoleModal = document.getElementById('consoleModal');
+                
+                if (modal && !modal.classList.contains('hidden')) {
+                    this.machineManager?.hideModal();
+                } else if (consoleModal && !consoleModal.classList.contains('hidden')) {
+                    this.machineManager?.hideConsoleModal();
+                }
+            }
+        });
+    }
+
+    setupPageVisibility() {
+        // Gérer la visibilité de la page pour optimiser les performances
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // Page cachée - réduire l'activité
+                this.pauseMachineUpdates();
+            } else {
+                // Page visible - reprendre l'activité
+                this.resumeMachineUpdates();
+            }
+        });
+    }
+
+    pauseMachineUpdates() {
+        // Pause les mises à jour des machines quand la page n'est pas visible
+        if (this.machineManager) {
+            // Logique de pause si nécessaire
+            console.log('Dashboard paused - page not visible');
+        }
+    }
+
+    resumeMachineUpdates() {
+        // Reprend les mises à jour des machines
+        if (this.machineManager) {
+            // Logique de reprise si nécessaire
+            console.log('Dashboard resumed - page visible');
+        }
+    }
+
+    // Méthodes utilitaires pour la page
+    refreshMachines() {
+        if (this.machineManager) {
+            this.machineManager.updateDisplay();
+        }
+    }
+
+    getMachineCount() {
+        return this.machineManager ? this.machineManager.machines.size : 0;
+    }
+
+    getConnectedMachineCount() {
+        if (!this.machineManager) return 0;
+        
+        let count = 0;
+        this.machineManager.machines.forEach(machine => {
+            if (machine.status === 'connected') count++;
+        });
+        return count;
+    }
+}
+
+// Initialiser la page dashboard
+const dashboardPage = new DashboardPage();
+
+
+// === main.js ===
+/**
+ * Fichier principal - Point d'entrée de l'application
+ */
+
+// Charger la configuration
+// La configuration est définie dans config.js
+
+// Initialisation CSRF
+window.LineaCNC = window.LineaCNC || {};
+const csrfMetaTag = document.querySelector('meta[name="csrf-token"]');
+if (csrfMetaTag) {
+    window.LineaCNC.csrfToken = csrfMetaTag.getAttribute('content');
+}
+
+// Utilitaires globaux
+window.LineaCNC.utils = {
+    /**
+     * Debounce une fonction
+     */
+    debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    },
+
+    /**
+     * Throttle une fonction
+     */
+    throttle(func, limit) {
+        let inThrottle;
+        return function() {
+            const args = arguments;
+            const context = this;
+            if (!inThrottle) {
+                func.apply(context, args);
+                inThrottle = true;
+                setTimeout(() => inThrottle = false, limit);
+            }
+        };
+    },
+
+    /**
+     * Formater une date
+     */
+    formatDate(date, options = {}) {
+        const defaultOptions = {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        };
+        return new Intl.DateTimeFormat('fr-FR', { ...defaultOptions, ...options }).format(new Date(date));
+    },
+
+    /**
+     * Formater une durée
+     */
+    formatDuration(ms) {
+        const seconds = Math.floor(ms / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+        const days = Math.floor(hours / 24);
+
+        if (days > 0) return `${days}j ${hours % 24}h`;
+        if (hours > 0) return `${hours}h ${minutes % 60}min`;
+        if (minutes > 0) return `${minutes}min ${seconds % 60}s`;
+        return `${seconds}s`;
+    },
+
+    /**
+     * Copier du texte dans le presse-papiers
+     */
+    async copyToClipboard(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+            notificationManager.show('Copié dans le presse-papiers', 'success');
+            return true;
+        } catch (err) {
+            console.error('Erreur lors de la copie:', err);
+            notificationManager.show('Erreur lors de la copie', 'error');
+            return false;
+        }
+    },
+
+    /**
+     * Valider un email
+     */
+    isValidEmail(email) {
+        const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return re.test(email);
+    },
+
+    /**
+     * Générer un ID unique
+     */
+    generateId(prefix = 'id') {
+        return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+};
+
+// Gestion des erreurs globales
+window.addEventListener('error', (event) => {
+    console.error('Erreur JavaScript:', event.error);
+    if (window.LineaCNC?.debug) {
+        notificationManager.show(`Erreur: ${event.error.message}`, 'error');
+    }
+});
+
+// Gestion des promesses rejetées
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('Promesse rejetée:', event.reason);
+    if (window.LineaCNC?.debug) {
+        notificationManager.show(`Erreur: ${event.reason}`, 'error');
+    }
+});
+
+// Initialisation de l'application
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('LineaCNC v' + window.LineaCNC.version + ' initialisé');
+    
+    // Initialiser les composants globaux
+    if (typeof notificationManager !== 'undefined') {
+        console.log('NotificationManager initialisé');
+    }
+    
+    if (typeof dropdownManager !== 'undefined') {
+        console.log('DropdownManager initialisé');
+    }
+    
+    // Détecter la page actuelle et initialiser les composants spécifiques
+    const body = document.body;
+    const pageClass = body.getAttribute('data-page');
+    
+    if (pageClass) {
+        console.log('Page détectée:', pageClass);
+    }
+});
+
+// Exports pour les modules
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        LineaCNC: window.LineaCNC,
+        notificationManager: window.notificationManager,
+        dropdownManager: window.dropdownManager
+    };
 }
