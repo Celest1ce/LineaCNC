@@ -9,9 +9,10 @@ interface LayoutProps {
   children: React.ReactNode;
   fullWidth?: boolean;
   enableNavbarAutoHide?: boolean;
+  hideFooter?: boolean;
 }
 
-export function Layout({ children, fullWidth = false, enableNavbarAutoHide = false }: LayoutProps) {
+export function Layout({ children, fullWidth = false, enableNavbarAutoHide = false, hideFooter = false }: LayoutProps) {
   const location = useLocation();
   const isHomePage = location.pathname === '/';
   const { user } = useAuth();
@@ -29,7 +30,7 @@ export function Layout({ children, fullWidth = false, enableNavbarAutoHide = fal
       <main className={`flex-grow ${mainPaddingTop} ${!isHomePage && !fullWidth ? 'container mx-auto px-4 py-8' : ''}`}>
         {children}
       </main>
-      {!user && <Footer />}
+      {!user && !hideFooter && <Footer />}
     </div>
   );
 }

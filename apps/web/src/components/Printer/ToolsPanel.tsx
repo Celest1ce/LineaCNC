@@ -23,6 +23,7 @@ import type { MeshViewer3DConfig } from '../../types/mesh';
 interface ToolsPanelProps {
   printerId?: string;
   isConnected?: boolean;
+  demoMode?: boolean;
   onSendCommand?: (command: string) => Promise<void>;
   onAddConsoleEntry?: (entry: { type: 'command' | 'response' | 'error'; text: string }) => void;
 }
@@ -32,6 +33,7 @@ type ViewTab = 'mesh' | 'calibration' | 'diagnostics';
 export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   printerId,
   isConnected = false,
+  demoMode = false,
   onSendCommand,
   onAddConsoleEntry,
 }) => {
@@ -51,6 +53,33 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
       distance: 3,
     },
   });
+
+  const buildDefaultDemoMesh = () => {
+    const width = 9;
+    const height = 9;
+    const values = new Float64Array(width * height);
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const nx = x / (width - 1);
+        const ny = y / (height - 1);
+        const wave = Math.sin(nx * Math.PI * 2.0) * Math.cos(ny * Math.PI * 2.0) * 0.16;
+        const dome = (1 - Math.pow(nx - 0.5, 2) * 4) * (1 - Math.pow(ny - 0.5, 2) * 4) * 0.09;
+        const tilt = (nx - 0.5) * 0.06 + (ny - 0.5) * -0.04;
+        values[y * width + x] = wave + dome + tilt;
+      }
+    }
+
+    return {
+      width,
+      height,
+      values,
+      metadata: {
+        source: 'demo-default',
+        timestamp: new Date().toISOString(),
+      },
+    };
+  };
 
   const handleLoadMesh = async () => {
     if (!onSendCommand || !isConnected) {
@@ -189,6 +218,19 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
       unsubscribe();
     };
   }, [printerId, onAddConsoleEntry, meshState]);
+
+  // Charge un mesh de démonstration par défaut en mode émulateur.
+  useEffect(() => {
+    if (!demoMode || meshState.mesh) return;
+
+    meshState.loadMesh(buildDefaultDemoMesh());
+    if (onAddConsoleEntry) {
+      onAddConsoleEntry({
+        type: 'response',
+        text: 'Mesh de démonstration chargé (relief léger).',
+      });
+    }
+  }, [demoMode, meshState, onAddConsoleEntry]);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm flex flex-col h-full">

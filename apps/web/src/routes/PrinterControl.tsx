@@ -221,6 +221,12 @@ export const PrinterControl: React.FC<PrinterControlProps> = ({ demoMode = false
     return () => clearInterval(interval);
   }, [demoMode]);
 
+  useEffect(() => {
+    if (demoMode) {
+      setIsConsolePanelOpen(true);
+    }
+  }, [demoMode]);
+
   // Charger les paramètres depuis l'API au montage
   useEffect(() => {
     if (demoMode) return;
@@ -693,12 +699,37 @@ export const PrinterControl: React.FC<PrinterControlProps> = ({ demoMode = false
   const handleMove = (axis: 'X' | 'Y' | 'Z', direction: 1 | -1) => {
     if (!isConnected) return;
     const distance = moveDistance * direction;
+    if (demoMode) {
+      const axisKey = axis.toLowerCase() as 'x' | 'y' | 'z';
+      setDemoState(prev => ({ ...prev, [axisKey]: Math.max(0, prev[axisKey] + distance) }));
+      addConsoleEntry({ type: 'command', text: `> G91 G1 ${axis}${distance} F${feedRate} G90` });
+      setTimeout(() => addConsoleEntry({ type: 'response', text: 'ok (demo)' }), 150);
+      return;
+    }
     const command = `G91\nG1 ${axis}${distance} F${feedRate}\nG90`;
     handleSendCommand(command);
   };
 
   const handleHome = (axis?: 'X' | 'Y' | 'Z' | 'ALL') => {
     if (!isConnected) return;
+
+    if (demoMode) {
+      if (!axis || axis === 'ALL') {
+        setDemoState(prev => ({ ...prev, x: 0, y: 0, z: 0 }));
+        addConsoleEntry({ type: 'command', text: '> G28' });
+      } else if (axis === 'X') {
+        setDemoState(prev => ({ ...prev, x: 0 }));
+        addConsoleEntry({ type: 'command', text: '> G28 X' });
+      } else if (axis === 'Y') {
+        setDemoState(prev => ({ ...prev, y: 0 }));
+        addConsoleEntry({ type: 'command', text: '> G28 Y' });
+      } else if (axis === 'Z') {
+        setDemoState(prev => ({ ...prev, z: 0 }));
+        addConsoleEntry({ type: 'command', text: '> G28 Z' });
+      }
+      setTimeout(() => addConsoleEntry({ type: 'response', text: 'ok (demo)' }), 200);
+      return;
+    }
 
     // Si un axe spécifique est demandé, faire un home de cet axe
     if (axis && axis !== 'ALL') {
@@ -827,7 +858,7 @@ export const PrinterControl: React.FC<PrinterControlProps> = ({ demoMode = false
   }
 
   return (
-    <Layout fullWidth enableNavbarAutoHide>
+    <Layout fullWidth enableNavbarAutoHide hideFooter={demoMode}>
       <div className="w-full">
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-4 py-2 shadow-sm">
@@ -1347,8 +1378,9 @@ export const PrinterControl: React.FC<PrinterControlProps> = ({ demoMode = false
           {/* Right Column - Tools */}
           <div className="flex flex-col h-full">
             <ToolsPanel
-              printerId={id}
+              printerId={printer.id}
               isConnected={isConnected}
+              demoMode={demoMode}
               onSendCommand={handleSendCommand}
               onAddConsoleEntry={addConsoleEntry}
             />

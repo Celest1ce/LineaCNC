@@ -50,11 +50,18 @@ export function Home() {
             {t('home.description')}
           </p>
           <div className="animate-scale-in" style={{ animationDelay: '0.4s' }}>
-            <Link to={user ? "/dashboard" : "/login"}>
-              <Button variant="primary" className="btn-glass text-lg px-8 py-4">
-                {t('home.access')}
-              </Button>
-            </Link>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Link to={user ? "/dashboard" : "/login"}>
+                <Button variant="primary" className="btn-glass text-lg px-8 py-4">
+                  {t('home.access')}
+                </Button>
+              </Link>
+              <Link to="/discover-interface">
+                <Button variant="secondary" className="text-lg px-8 py-4 bg-white/20 border border-white/40 text-white hover:bg-white/30">
+                  {t('nav.discoverInterface')}
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
 
@@ -207,11 +214,18 @@ export function Home() {
             {t('home.cta.subtitle')}
           </p>
           <div className="scroll-reveal">
-            <Link to={user ? "/dashboard" : "/login"}>
-              <Button variant="primary" className="btn-glass text-lg px-8 py-4">
-                {t('home.access')}
-              </Button>
-            </Link>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Link to={user ? "/dashboard" : "/login"}>
+                <Button variant="primary" className="btn-glass text-lg px-8 py-4">
+                  {t('home.access')}
+                </Button>
+              </Link>
+              <Link to="/discover-interface">
+                <Button variant="secondary" className="text-lg px-8 py-4 bg-white/20 border border-white/40 text-white hover:bg-white/30">
+                  {t('nav.discoverInterface')}
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
       </section>
